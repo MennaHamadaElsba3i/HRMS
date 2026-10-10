@@ -26,12 +26,15 @@ import AiInsufficientData from "../shared/AiInsufficientData";
 export default function SkillGapView() {
   const { t, i18n } = useTranslation();
   const lang = getAiLang(i18n);
-  const target = useAiTarget();
   const mutation = useSkillGap(lang);
+  const last = mutation.lastRequest; // restored after a refresh
+  const target = useAiTarget(last?.employee_id);
 
-  const [period, setPeriod] = useState("");
-  const [targetRole, setTargetRole] = useState("");
-  const [targetSkills, setTargetSkills] = useState("");
+  const [period, setPeriod] = useState(last?.period ?? "");
+  const [targetRole, setTargetRole] = useState(last?.target_role ?? "");
+  const [targetSkills, setTargetSkills] = useState(
+    Array.isArray(last?.target_skills) ? last.target_skills.join(", ") : "",
+  );
 
   const submit = () => {
     if (!target.employeeId) return;
@@ -54,10 +57,10 @@ export default function SkillGapView() {
   };
 
   const data = mutation.data?.data;
-   const insufficient = isInsufficientData(data);
-   const hasContent =
-     !insufficient &&
-     (hasAiValue(data?.skill_gaps) || hasAiValue(data?.recommendations));
+  const insufficient = isInsufficientData(data);
+  const hasContent =
+    !insufficient &&
+    (hasAiValue(data?.skill_gaps) || hasAiValue(data?.recommendations));
 
   return (
     <div className="space-y-6">
@@ -141,14 +144,14 @@ export default function SkillGapView() {
         />
       )}
 
-         {mutation.isSuccess && insufficient && (
-     <AiInsufficientData
-       message={data.message}
-       missingCategories={data.missing_categories}
-     />
-   )}
+      {mutation.isSuccess && insufficient && (
+        <AiInsufficientData
+          message={data.message}
+          missingCategories={data.missing_categories}
+        />
+      )}
 
-   {mutation.isSuccess && !insufficient && !hasContent && (
+      {mutation.isSuccess && !insufficient && !hasContent && (
         <AiEmpty
           title={t("ai.skillGap.emptyTitle")}
           description={t("ai.skillGap.emptyDescription")}

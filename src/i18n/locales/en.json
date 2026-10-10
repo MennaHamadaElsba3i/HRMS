@@ -2006,7 +2006,8 @@
       "generic": "Something went wrong. Please try again.",
       "noEmployeeCode": "Your employee code is missing, so this request can't be sent.",
       "unavailable": "This feature isn't available yet.",
-      "network": "Couldn't reach the server. Check your connection and try again."
+      "network": "Couldn't reach the server. Check your connection and try again.",
+      "render": "Something went wrong while displaying this result. Please try again."
     },
     "careerCoach": {
       "intro": "Generate personalized career guidance based on your approved employee data.",
@@ -2019,7 +2020,15 @@
       "reviewFocus": "Review focus",
       "generatedAt": "Generated at",
       "emptyTitle": "No guidance available",
-      "emptyDescription": "There isn't enough data to generate career guidance yet."
+      "emptyDescription": "There isn't enough data to generate career guidance yet.",
+      "evidence": "Evidence",
+      "measurableTarget": "Measurable target",
+      "timeline": "Suggested timeline",
+      "priorities": {
+        "high": "High priority",
+        "medium": "Medium priority",
+        "low": "Low priority"
+      }
     },
     "insufficient": {
       "title": "Not enough approved data",
@@ -3460,7 +3469,7 @@
     "errors": {
       "fetchFailed": "Failed to retrieve data."
     }
-  },
+  },
   "managerPolicies": {
     "eyebrow": "Manager / Policies",
     "title": "Company policies",

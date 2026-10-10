@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../../../context/AuthContext";
 import { getAiFeaturesForRole } from "../config/aiFeatures";
 import { AI_FEATURE_VIEWS } from "../config/aiFeatureViews";
+import AiErrorBoundary from "./shared/AiErrorBoundary";
 
 export default function AiTab({ eyebrow, title, subtitle, initialFeature }) {
   const { t } = useTranslation();
@@ -68,7 +69,9 @@ export default function AiTab({ eyebrow, title, subtitle, initialFeature }) {
         }
       >
         {View ? (
-          <View key={active.key} />
+          <AiErrorBoundary key={active.key}>
+    <View />
+  </AiErrorBoundary>
         ) : (
           <div className="rounded-xl border border-dashed border-[#d9e2ec] bg-white p-6 text-[13px] text-[#627d98]">
             {t("ai.comingSoon")}
