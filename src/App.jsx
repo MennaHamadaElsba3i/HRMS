@@ -90,36 +90,158 @@ import CompanyEventsPage from "./features/events/pages/CompanyEventsPage";
 // ==================== Layout ====================
 import DashboardLayout from "./layouts/DashboardLayout";
 
-// ==================== Google OAuth hash handler ====================
-(function handleGoogleHash() {
-  const hash = window.location.hash;
+// ==================== Google OAuth callback handler ====================
+(function handleGoogleCallback() {
+  const hash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
+  const search = window.location.search ? window.location.search.replace(/^\?/, "") : "";
 
-  if (!hash.includes("token=")) return;
+  if (!hash && !search) return;
 
-  const token = new URLSearchParams(hash.replace(/^#/, "")).get("token");
+  const hashParams = new URLSearchParams(hash);
+  const searchParams = new URLSearchParams(search);
+
+  // 1. Extract token (supports 'token' or 'access_token' in hash or query)
+  const token =
+    hashParams.get("token") ||
+    hashParams.get("access_token") ||
+    searchParams.get("token") ||
+    searchParams.get("access_token");
 
   if (!token) return;
 
   try {
-    const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    // 2. Decode JWT payload if available
+    let jwtPayload = null;
+    try {
+      const parts = token.split(".");
+      if (parts.length === 3) {
+        const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const jsonStr = decodeURIComponent(
+          atob(b64)
+            .split("")
+            .map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
+            .join(""),
+        );
+        jwtPayload = JSON.parse(jsonStr);
+      }
+    } catch {
+      try {
+        jwtPayload = JSON.parse(atob(token.split(".")[1]));
+      } catch {}
+    }
 
-    const payload = JSON.parse(atob(b64));
-
-    const user = {
-      id: payload.sub,
-      role: payload.role,
+    // 3. Extract user data from parameters if returned by backend
+    const parseJsonParam = (val) => {
+      if (!val) return null;
+      try {
+        return JSON.parse(val);
+      } catch {
+        try {
+          return JSON.parse(decodeURIComponent(val));
+        } catch {
+          try {
+            return JSON.parse(atob(val));
+          } catch {
+            return null;
+          }
+        }
+      }
     };
 
+    const userParam = hashParams.get("user") || searchParams.get("user");
+    const parsedUserParam = parseJsonParam(userParam);
+
+    const dataParam = hashParams.get("data") || searchParams.get("data");
+    const parsedDataParam = parseJsonParam(dataParam);
+
+    const jwtUser =
+      (jwtPayload?.user && typeof jwtPayload.user === "object" ? jwtPayload.user : null) ||
+      (jwtPayload && typeof jwtPayload === "object" ? jwtPayload : null);
+
+    const dataUser =
+      (parsedDataParam?.user && typeof parsedDataParam.user === "object"
+        ? parsedDataParam.user
+        : parsedDataParam && !parsedDataParam.token && !parsedDataParam.access_token
+          ? parsedDataParam
+          : null);
+
+    const directParamsUser = {};
+    const idParam =
+      hashParams.get("id") ||
+      searchParams.get("id") ||
+      hashParams.get("userId") ||
+      searchParams.get("userId");
+    const nameParam =
+      hashParams.get("name") ||
+      searchParams.get("name") ||
+      hashParams.get("userName") ||
+      searchParams.get("userName");
+    const roleParam = hashParams.get("role") || searchParams.get("role");
+    const emailParam = hashParams.get("email") || searchParams.get("email");
+
+    if (idParam) directParamsUser.id = idParam;
+    if (nameParam) directParamsUser.name = nameParam;
+    if (roleParam) directParamsUser.role = roleParam;
+    if (emailParam) directParamsUser.email = emailParam;
+
+    // Combine all user data, giving priority to explicit user payload returned by backend
+    const combinedUser = {
+      ...(jwtUser || {}),
+      ...(dataUser || {}),
+      ...(parsedUserParam && typeof parsedUserParam === "object" ? parsedUserParam : {}),
+      ...directParamsUser,
+    };
+
+    // Ensure id / userId
+    const userId =
+      combinedUser.id ||
+      combinedUser.userId ||
+      jwtPayload?.sub ||
+      1;
+    combinedUser.id = userId;
+    combinedUser.userId = userId;
+
+    // Ensure role
+    const userRole = combinedUser.role || jwtPayload?.role || "Owner";
+    combinedUser.role = userRole;
+
+    // Ensure name
+    if (!combinedUser.name && jwtPayload?.name) {
+      combinedUser.name = jwtPayload.name;
+    }
+
+    // Ensure initials (mirroring computeInitials from AuthContext)
+    if (!combinedUser.initials) {
+      const nameStr = combinedUser.name || "";
+      const parts = nameStr.trim().split(/\s+/);
+      combinedUser.initials =
+        parts.length > 1 && parts[0] && parts[parts.length - 1]
+          ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+          : nameStr
+            ? nameStr.slice(0, 2).toUpperCase()
+            : "U";
+    }
+
+    // Ensure permissions
+    const permissions = Array.isArray(combinedUser.permissions)
+      ? combinedUser.permissions
+      : Array.isArray(jwtPayload?.permissions)
+        ? jwtPayload.permissions
+        : [];
+    combinedUser.permissions = permissions;
+
+    // Save exactly what the existing login flow saves
     localStorage.setItem("token", token);
-    localStorage.setItem("user", JSON.stringify(user));
-    localStorage.setItem("currentUser", JSON.stringify(user));
-    localStorage.setItem("role", payload.role);
-    localStorage.setItem("permissions", JSON.stringify([]));
+    localStorage.setItem("user", JSON.stringify(combinedUser));
+    localStorage.setItem("currentUser", JSON.stringify(combinedUser));
+    localStorage.setItem("role", userRole);
+    localStorage.setItem("permissions", JSON.stringify(permissions));
     localStorage.setItem("rememberMe", "true");
   } catch (e) {
-    console.error("Google token parse failed", e);
+    console.error("Google callback parse failed", e);
   }
 
+  // Clean the hash and query parameters from the URL
   window.history.replaceState(null, "", window.location.pathname);
 })();
 
