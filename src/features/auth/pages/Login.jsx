@@ -96,10 +96,37 @@ export default function Login({ isOwner }) {
     const searchParams = new URLSearchParams(window.location.search);
     const messageParam = searchParams.get("message");
 
-    // ---- SUCCESS: token in URL hash ----
-  
+    // ---- SUCCESS: token in URL hash or query ----
+    const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
+    const token =
+      hashParams.get("token") ||
+      hashParams.get("access_token") ||
+      searchParams.get("token") ||
+      searchParams.get("access_token");
 
-    // ---- FAILURE: error message in query parameter ----
+    if (token) {
+      googleCallbackHandled.current = true;
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState(null, "", cleanUrl);
+
+      const rawUser =
+        localStorage.getItem("user") || localStorage.getItem("currentUser");
+      let dest = "/admin/dashboard";
+      if (rawUser) {
+        try {
+          const parsed = JSON.parse(rawUser);
+          if (parsed?.role && ROLE_ROUTES[parsed.role]) {
+            dest = ROLE_ROUTES[parsed.role];
+          }
+        } catch {}
+      }
+
+      toast.success(
+        t("auth.login.googleSuccess", "Signed in with Google successfully."),
+      );
+      navigate(dest, { replace: true });
+      return;
+    }
     if (messageParam) {
       googleCallbackHandled.current = true;
 

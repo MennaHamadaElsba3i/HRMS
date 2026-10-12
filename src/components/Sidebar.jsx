@@ -46,7 +46,7 @@ const Sidebar = ({ role = "admin", isOpen = false, onClose }) => {
     }
   })();
 
-  const activeUser = storedUser || currentUser;
+  const activeUser = currentUser?.name ? currentUser : (storedUser || currentUser);
 
   // =========================
   // User Display Information
@@ -78,6 +78,7 @@ const Sidebar = ({ role = "admin", isOpen = false, onClose }) => {
     userInfo = {
       displayName: adminName,
       displayTitle:
+        activeUser?.role ||
         activeUser?.role_label ||
         activeUser?.jobTitle ||
         activeUser?.roleTitle ||
@@ -557,7 +558,6 @@ const Sidebar = ({ role = "admin", isOpen = false, onClose }) => {
           )}
 
           {/* Divider Line */}
-          {/* 
           <div
             style={{
               height: "1px",
@@ -566,11 +566,51 @@ const Sidebar = ({ role = "admin", isOpen = false, onClose }) => {
               width: "100%",
               border: "none",
             }}
-          /> */}
+          />
 
           {/* User Mini Profile */}
+          <div className="flex items-center gap-3 px-1 py-1">
+            {/* Avatar */}
+            <div
+              style={{
+                backgroundColor: avatarBg,
+                color: avatarColor,
+              }}
+              className="
+                flex
+                h-[38px]
+                w-[38px]
+                shrink-0
+                items-center
+                justify-center
+                rounded-full
+                text-[12px]
+                font-bold
+              "
+            >
+              {avatarText}
+            </div>
 
+            {/* User Info */}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <strong className="truncate text-[13.5px] font-bold leading-tight text-white">
+                {displayName}
+              </strong>
 
+              <span className="mt-0.5 truncate text-[11.5px] leading-tight text-[#8fa8c1]">
+                {displayTitle}
+              </span>
+            </div>
+
+            {/* More */}
+            <button
+              type="button"
+              className="ml-auto cursor-pointer rounded p-1 text-[#8fa8c1] transition-colors hover:text-white rtl:ml-0 rtl:mr-auto"
+              title="More"
+            >
+              <FiMoreHorizontal className="h-4 w-4 shrink-0" />
+            </button>
+          </div>
         </div>
       </aside>
     </>
