@@ -2,11 +2,35 @@ import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useAuth } from "../../../context/AuthContext";
 
-const readTokenFromHash = () => {
-  const hash = window.location.hash;
-  if (!hash || !hash.includes("token=")) return null;
-  const p = new URLSearchParams(hash.replace(/^#/, ""));
-  return p.get("token") || p.get("access_token");
+const readAuthFromUrl = () => {
+  const hash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
+  const search = window.location.search ? window.location.search.replace(/^\?/, "") : "";
+  if (!hash && !search) return null;
+
+  const hp = new URLSearchParams(hash);
+  const sp = new URLSearchParams(search);
+
+  const token = hp.get("token") || hp.get("access_token") || sp.get("token") || sp.get("access_token");
+  if (!token) return null;
+
+  const parseJson = (val) => {
+    if (!val) return null;
+    try {
+      return JSON.parse(val);
+    } catch {
+      try {
+        return JSON.parse(decodeURIComponent(val));
+      } catch {
+        return null;
+      }
+    }
+  };
+
+  const rawUser = parseJson(hp.get("user") || sp.get("user"));
+  const rawData = parseJson(hp.get("data") || sp.get("data"));
+  const dataUser = rawData?.user || (rawData && !rawData.token ? rawData : null);
+
+  return { token, urlUser: rawUser || dataUser };
 };
 
 const decodeJwt = (token) => {
@@ -28,30 +52,41 @@ export default function GoogleCallbackGate({ children }) {
   const { login, isAuthenticated } = useAuth();
   const handled = useRef(false);
 
-  // بيتقري مرة واحدة قبل ما أي Route يتعرض
-  const [pendingToken] = useState(readTokenFromHash);
-  const [processing, setProcessing] = useState(!!pendingToken);
+  const [pendingAuth] = useState(readAuthFromUrl);
+  const [processing, setProcessing] = useState(!!pendingAuth);
 
   useEffect(() => {
-    if (!pendingToken || handled.current) return;
+    if (!pendingAuth || handled.current) return;
     handled.current = true;
 
-    // نضّف الـ hash بس ونفضل في نفس الصفحة (/admin/dashboard)
     window.history.replaceState(null, "", window.location.pathname);
 
-    const payload = decodeJwt(pendingToken);
-    if (!payload?.role) {
+    const { token, urlUser } = pendingAuth;
+    const payload = decodeJwt(token);
+
+    const jwtUser = payload?.user || payload;
+    const user = {
+      ...(jwtUser && typeof jwtUser === "object" ? jwtUser : {}),
+      ...(urlUser && typeof urlUser === "object" ? urlUser : {}),
+    };
+
+    const role = user.role || payload?.role || "Owner";
+    user.role = role;
+    user.id = user.id || user.userId || payload?.sub || 1;
+    user.userId = user.id;
+
+    if (!role) {
       toast.error("Google login failed.");
       setProcessing(false);
       return;
     }
 
     login({
-      token: pendingToken,
-      user: { id: payload.sub, role: payload.role },
+      token,
+      user,
     });
     toast.success("Signed in with Google");
-  }, [pendingToken, login]);
+  }, [pendingAuth, login]);
 
   // نستنى لحد ما الـ state يتثبّت قبل ما نعرض الراوتس
   useEffect(() => {
