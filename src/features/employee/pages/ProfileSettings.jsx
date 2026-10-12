@@ -1,4 +1,4 @@
-import ProfileSettings from "../../../components/ProfileSettings";
+import ProfileSettings from "../../profile";
 
 const EmployeeProfileSettings = () => <ProfileSettings role="employee" />;
 

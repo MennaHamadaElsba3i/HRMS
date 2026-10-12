@@ -1,5 +1,5 @@
-import ProfileSettings from "../../../components/ProfileSettings";
+import ProfileSettings from "../../profile";
 
-const EmployeeProfileSettings = () => <ProfileSettings role="employee" />;
+const ManagerProfileSettings = () => <ProfileSettings role="manager" />;
 
-export default EmployeeProfileSettings;
+export default ManagerProfileSettings;

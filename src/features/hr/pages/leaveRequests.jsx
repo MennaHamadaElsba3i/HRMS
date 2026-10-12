@@ -9,42 +9,15 @@ import {
   FiAlertCircle,
   FiClock,
 } from "react-icons/fi";
+import {
+  useApproveLeaveRequest,
+  useHrPendingLeaveRequests,
+  useRejectLeaveRequest,
+} from "../hooks/useLeaveRequests";
+import { useOwnerPendingLeaveRequests } from "../../admin/hooks/useOwnerLeaveRequests";
 
-const initialRequests = [
-  {
-    id: 1,
-    nameKey: "leaveRequests.requestsEmployees.mariam.name",
-    roleKey: "leaveRequests.requestsEmployees.mariam.role",
-    departmentKey: "leaveRequests.requestsEmployees.mariam.department",
-    category: "annual",
-    datesKey: "leaveRequests.requestsEmployees.mariam.dates",
-    balanceKey: "leaveRequests.requestsEmployees.mariam.balance",
-  },
-  {
-    id: 2,
-    nameKey: "leaveRequests.requestsEmployees.omar.name",
-    roleKey: "leaveRequests.requestsEmployees.omar.role",
-    departmentKey: "leaveRequests.requestsEmployees.omar.department",
-    category: "emergency",
-    datesKey: "leaveRequests.requestsEmployees.omar.dates",
-    balanceKey: "leaveRequests.requestsEmployees.omar.balance",
-  },
-  {
-    id: 3,
-    nameKey: "leaveRequests.requestsEmployees.nour.name",
-    roleKey: "leaveRequests.requestsEmployees.nour.role",
-    departmentKey: "leaveRequests.requestsEmployees.nour.department",
-    category: "medical",
-    datesKey: "leaveRequests.requestsEmployees.nour.dates",
-    balanceKey: "leaveRequests.requestsEmployees.nour.balance",
-  },
-];
-
-const categoryStyles = {
-  annual: "bg-[#f5f3ff] text-[#7c3aed]",
-  emergency: "bg-[#fff7ed] text-[#c2410c]",
-  medical: "bg-[#fef2f2] text-[#dc2626]",
-};
+const categoryStyle =
+  "bg-[#f5f3ff] text-[#7c3aed]";
 
 const pageVariants = {
   hidden: {
@@ -110,15 +83,28 @@ const modalVariants = {
   },
 };
 
-const LeaveRequests = () => {
+const LeaveRequests = ({ role = "hr" }) => {
   const { t, i18n } = useTranslation();
 
   const isArabic = i18n.language?.toLowerCase().startsWith("ar");
+  const lang = isArabic ? "ar" : "en";
 
-  const [requests, setRequests] = useState(initialRequests);
-
-  const [approvedCount, setApprovedCount] = useState(12);
-  const [rejectedCount, setRejectedCount] = useState(2);
+  const hrRequestsQuery = useHrPendingLeaveRequests(lang, role === "hr");
+  const ownerRequestsQuery = useOwnerPendingLeaveRequests(
+    lang,
+    role === "owner",
+  );
+  const requestsQuery =
+    role === "owner" ? ownerRequestsQuery : hrRequestsQuery;
+  const approveMutation = useApproveLeaveRequest(lang);
+  const rejectMutation = useRejectLeaveRequest(lang);
+  const requests = useMemo(
+    () =>
+      (requestsQuery.data || []).map((request) =>
+        mapLeaveRequest(request, isArabic, t),
+      ),
+    [requestsQuery.data, isArabic, t],
+  );
 
   const [activeAction, setActiveAction] = useState(null);
 
@@ -128,6 +114,7 @@ const LeaveRequests = () => {
   });
 
   const [rejectNote, setRejectNote] = useState("");
+  const [rejectNoteError, setRejectNoteError] = useState("");
   const [message, setMessage] = useState(null);
 
   useEffect(() => {
@@ -135,16 +122,7 @@ const LeaveRequests = () => {
     document.documentElement.lang = isArabic ? "ar" : "en";
   }, [isArabic]);
 
-  const translatedRequests = useMemo(() => {
-    return requests.map((request) => ({
-      ...request,
-      name: t(request.nameKey),
-      role: t(request.roleKey),
-      department: t(request.departmentKey),
-      dates: t(request.datesKey),
-      balance: t(request.balanceKey),
-    }));
-  }, [requests, i18n.language, t]);
+  const translatedRequests = requests;
 
   const showMessage = (type, text) => {
     setMessage({
@@ -157,23 +135,22 @@ const LeaveRequests = () => {
     }, 2500);
   };
 
-  const handleApprove = (request) => {
+  const handleApprove = async (request) => {
     setActiveAction(`approve-${request.id}`);
 
-    setTimeout(() => {
-      setRequests((prev) => prev.filter((item) => item.id !== request.id));
-
-      setApprovedCount((prev) => prev + 1);
-
+    try {
+      const response = await approveMutation.mutateAsync(request.id);
       setActiveAction(null);
-
+      showMessage("success", response?.message || t("leaveRequests.approveSuccess"));
+    } catch (error) {
+      setActiveAction(null);
       showMessage(
-        "success",
-        isArabic
-          ? `تمت الموافقة على طلب ${request.name}`
-          : `${request.name}'s leave request has been approved.`,
+        "error",
+        getLeaveRequestError(error, isArabic
+          ? "تعذر الموافقة على طلب الإجازة."
+          : "Failed to approve the leave request."),
       );
-    }, 500);
+    }
   };
 
   const handleRejectClick = (request) => {
@@ -183,6 +160,7 @@ const LeaveRequests = () => {
     });
 
     setRejectNote("");
+    setRejectNoteError("");
   };
 
   const closeRejectModal = () => {
@@ -192,10 +170,22 @@ const LeaveRequests = () => {
     });
 
     setRejectNote("");
+    setRejectNoteError("");
   };
 
-  const handleConfirmReject = () => {
-    if (!rejectModal.request || !rejectNote.trim()) {
+  const handleConfirmReject = async () => {
+    const trimmedNote = rejectNote.trim();
+
+    if (!rejectModal.request) {
+      return;
+    }
+
+    if (trimmedNote.length < 3 || trimmedNote.length > 2000) {
+      setRejectNoteError(
+        isArabic
+          ? "يجب أن يكون سبب الرفض بين 3 و2000 حرف."
+          : "The rejection note must be between 3 and 2000 characters.",
+      );
       return;
     }
 
@@ -203,27 +193,26 @@ const LeaveRequests = () => {
 
     setActiveAction(`reject-${request.id}`);
 
-    setTimeout(() => {
-      setRequests((prev) => prev.filter((item) => item.id !== request.id));
-
-      setRejectedCount((prev) => prev + 1);
-
-      setActiveAction(null);
-
-      setRejectModal({
-        open: false,
-        request: null,
+    try {
+      const response = await rejectMutation.mutateAsync({
+        id: request.id,
+        rejectionReason: trimmedNote,
       });
-
-      setRejectNote("");
-
+      setActiveAction(null);
+      closeRejectModal();
+      showMessage(
+        "rejected",
+        response?.message || t("leaveRequests.rejectSuccess"),
+      );
+    } catch (error) {
+      setActiveAction(null);
       showMessage(
         "error",
-        isArabic
-          ? `تم رفض طلب ${request.name}`
-          : `${request.name}'s leave request has been rejected.`,
+        getLeaveRequestError(error, isArabic
+          ? "تعذر رفض طلب الإجازة."
+          : "Failed to reject the leave request."),
       );
-    }, 500);
+    }
   };
 
   const handleExport = () => {
@@ -232,15 +221,17 @@ const LeaveRequests = () => {
       t("leaveRequests.table.roleDepartment"),
       t("leaveRequests.table.category"),
       t("leaveRequests.table.duration"),
-      t("leaveRequests.table.balance"),
+      t("leaveRequests.table.days"),
+      t("leaveRequests.table.reason"),
     ];
 
     const rows = translatedRequests.map((request) => [
       request.name,
       `${request.role} - ${request.department}`,
-      t(`leaveRequests.categories.${request.category}`),
+      request.category,
       request.dates,
-      request.balance,
+      request.days,
+      request.reason,
     ]);
 
     const csvContent = [headers, ...rows]
@@ -254,18 +245,12 @@ const LeaveRequests = () => {
     });
 
     const url = URL.createObjectURL(blob);
-
     const link = document.createElement("a");
-
     link.href = url;
     link.download = "leave-requests.csv";
-
     document.body.appendChild(link);
-
     link.click();
-
     document.body.removeChild(link);
-
     URL.revokeObjectURL(url);
 
     showMessage(
@@ -276,7 +261,8 @@ const LeaveRequests = () => {
     );
   };
 
-  const pendingCount = requests.length;
+  const pendingCount =
+    requestsQuery.isLoading || requestsQuery.isError ? "—" : requests.length;
 
   return (
     <motion.div
@@ -376,7 +362,7 @@ const LeaveRequests = () => {
       {/* ==================== Statistics ==================== */}
       <motion.div
         variants={containerVariants}
-        className="grid grid-cols-1 gap-5 sm:grid-cols-3"
+        className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
       >
         {/* Pending */}
         <motion.div
@@ -411,71 +397,6 @@ const LeaveRequests = () => {
           </div>
         </motion.div>
 
-        {/* Approved */}
-        <motion.div
-          variants={itemVariants}
-          whileHover={{
-            y: -4,
-            transition: {
-              duration: 0.2,
-              ease: "easeOut",
-            },
-          }}
-          className="flex flex-col justify-between rounded-2xl border border-[#e2e8f0]/80 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-shadow duration-200 hover:shadow-md"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-[#94a3b8]">
-              {isArabic ? "تمت الموافقة" : "Approved"}
-            </p>
-
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#ecfdf5] text-[#10b981]">
-              <FiCheck className="h-[18px] w-[18px]" />
-            </div>
-          </div>
-
-          <div className="mt-2">
-            <p className="text-[27px] font-bold tracking-tight text-[#0f172a]">
-              {approvedCount}
-            </p>
-
-            <p className="mt-1 text-xs font-normal text-[#64748b]">
-              {isArabic ? "تمت الموافقة هذا الشهر" : "Approved this month"}
-            </p>
-          </div>
-        </motion.div>
-
-        {/* Rejected */}
-        <motion.div
-          variants={itemVariants}
-          whileHover={{
-            y: -4,
-            transition: {
-              duration: 0.2,
-              ease: "easeOut",
-            },
-          }}
-          className="flex flex-col justify-between rounded-2xl border border-[#e2e8f0]/80 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-shadow duration-200 hover:shadow-md"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-[#94a3b8]">
-              {isArabic ? "مرفوضة" : "Rejected"}
-            </p>
-
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#fef2f2] text-[#ef4444]">
-              <FiX className="h-[18px] w-[18px]" />
-            </div>
-          </div>
-
-          <div className="mt-2">
-            <p className="text-[27px] font-bold tracking-tight text-[#0f172a]">
-              {rejectedCount}
-            </p>
-
-            <p className="mt-1 text-xs font-normal text-[#64748b]">
-              {isArabic ? "تم الرفض هذا الشهر" : "Rejected this month"}
-            </p>
-          </div>
-        </motion.div>
       </motion.div>
 
       {/* ==================== Results ==================== */}
@@ -506,10 +427,31 @@ const LeaveRequests = () => {
             </p>
           </div>
 
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eff6ff] text-[#3b82f6]">
-            <FiFileText className="h-[18px] w-[18px]" />
+          <div className="flex items-center gap-3">
+            {requestsQuery.isError && (
+              <button
+                type="button"
+                onClick={() => requestsQuery.refetch()}
+                disabled={requestsQuery.isFetching}
+                className="text-xs font-semibold text-red-600 underline disabled:opacity-50"
+              >
+                {isArabic ? "إعادة المحاولة" : "Retry"}
+              </button>
+            )}
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eff6ff] text-[#3b82f6]">
+              <FiFileText className="h-[18px] w-[18px]" />
+            </div>
           </div>
         </div>
+
+        {requestsQuery.isError && (
+          <p className="border-b border-red-100 bg-red-50 px-5 py-3 text-sm text-red-700">
+            {requestsQuery.error?.response?.data?.message ||
+              (isArabic
+                ? "تعذر تحميل طلبات الإجازات."
+                : "Failed to load leave requests.")}
+          </p>
+        )}
 
         {/* ==================== Desktop Table ==================== */}
         <div className="hidden w-full lg:block">
@@ -543,7 +485,7 @@ const LeaveRequests = () => {
                 </th>
 
                 <th className="px-4 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-[#94a3b8] rtl:text-right sm:text-[11px]">
-                  {t("leaveRequests.table.balance")}
+                  {t("leaveRequests.table.days")}
                 </th>
 
                 <th className="px-4 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-[#94a3b8] rtl:text-right sm:text-[11px]">
@@ -557,7 +499,7 @@ const LeaveRequests = () => {
             </thead>
 
             <tbody>
-              {requests.length === 0 ? (
+              {requestsQuery.isLoading || requestsQuery.isError || requests.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-16 text-center">
                     <div className="mx-auto flex max-w-sm flex-col items-center">
@@ -566,15 +508,25 @@ const LeaveRequests = () => {
                       </div>
 
                       <p className="text-sm font-bold text-[#1e293b] sm:text-base">
-                        {isArabic
+                        {requestsQuery.isLoading
+                          ? isArabic
+                            ? "جاري تحميل الطلبات..."
+                            : "Loading requests..."
+                          : requestsQuery.isError
+                            ? isArabic
+                              ? "تعذر تحميل الطلبات"
+                              : "Could not load requests"
+                            : isArabic
                           ? "لا توجد طلبات معلقة"
                           : "No pending requests"}
                       </p>
 
                       <p className="mt-1 text-xs text-[#64748b] sm:text-sm">
-                        {isArabic
+                        {!requestsQuery.isLoading &&
+                          !requestsQuery.isError &&
+                          (isArabic
                           ? "تمت مراجعة جميع طلبات الإجازات."
-                          : "All leave requests have been reviewed."}
+                          : "All leave requests have been reviewed.")}
                       </p>
                     </div>
                   </td>
@@ -606,11 +558,9 @@ const LeaveRequests = () => {
                     {/* Category */}
                     <td className="px-4 py-5 align-middle">
                       <span
-                        className={`inline-flex max-w-full rounded-full px-2.5 py-1 text-[10px] font-bold sm:px-3 sm:py-1.5 sm:text-xs ${
-                          categoryStyles[request.category]
-                        }`}
+                        className={`inline-flex max-w-full rounded-full px-2.5 py-1 text-[10px] font-bold sm:px-3 sm:py-1.5 sm:text-xs ${categoryStyle}`}
                       >
-                        {t(`leaveRequests.categories.${request.category}`)}
+                        {request.category}
                       </span>
                     </td>
 
@@ -621,25 +571,18 @@ const LeaveRequests = () => {
                       </span>
                     </td>
 
-                    {/* Balance */}
+                    {/* Requested days */}
                     <td className="px-4 py-5 align-middle">
                       <span className="block truncate text-xs font-medium text-[#475569] sm:text-sm">
-                        {request.balance}
+                        {request.days}
                       </span>
                     </td>
 
                     {/* Reason */}
                     <td className="px-4 py-5 align-middle">
-                      <button
-                        type="button"
-                        className="flex max-w-full items-center gap-1.5 text-xs font-semibold text-[#475569] underline underline-offset-2 transition hover:text-[#243B53]"
-                      >
-                        <FiFileText className="shrink-0" size={14} />
-
-                        <span className="truncate">
-                          {t("leaveRequests.viewReason")}
-                        </span>
-                      </button>
+                      <span className="block truncate text-xs text-[#475569]" title={request.reason}>
+                        {request.reason || "—"}
+                      </span>
                     </td>
 
                     {/* Actions */}
@@ -681,21 +624,33 @@ const LeaveRequests = () => {
 
         {/* ==================== Mobile ==================== */}
         <div className="divide-y divide-[#f1f5f9] lg:hidden">
-          {requests.length === 0 ? (
+          {requestsQuery.isLoading || requestsQuery.isError || requests.length === 0 ? (
             <div className="px-5 py-16 text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#f8fafc] text-[#94a3b8]">
                 <FiCheck size={22} />
               </div>
 
               <p className="mt-3 text-sm font-bold text-[#1e293b]">
-                {isArabic ? "لا توجد طلبات معلقة" : "No pending requests"}
+                {requestsQuery.isLoading
+                  ? isArabic
+                    ? "جاري تحميل الطلبات..."
+                    : "Loading requests..."
+                  : requestsQuery.isError
+                    ? isArabic
+                      ? "تعذر تحميل الطلبات"
+                      : "Could not load requests"
+                    : isArabic
+                      ? "لا توجد طلبات معلقة"
+                      : "No pending requests"}
               </p>
 
-              <p className="mt-1 text-xs text-[#64748b]">
-                {isArabic
-                  ? "تمت مراجعة جميع طلبات الإجازات."
-                  : "All leave requests have been reviewed."}
-              </p>
+              {!requestsQuery.isLoading && !requestsQuery.isError && (
+                <p className="mt-1 text-xs text-[#64748b]">
+                  {isArabic
+                    ? "تمت مراجعة جميع طلبات الإجازات."
+                    : "All leave requests have been reviewed."}
+                </p>
+              )}
             </div>
           ) : (
             translatedRequests.map((request) => (
@@ -728,11 +683,9 @@ const LeaveRequests = () => {
                   </div>
 
                   <span
-                    className={`shrink-0 rounded-full px-2.5 py-1.5 text-[10px] font-bold sm:px-3 sm:text-xs ${
-                      categoryStyles[request.category]
-                    }`}
+                    className={`shrink-0 rounded-full px-2.5 py-1.5 text-[10px] font-bold sm:px-3 sm:text-xs ${categoryStyle}`}
                   >
-                    {t(`leaveRequests.categories.${request.category}`)}
+                    {request.category}
                   </span>
                 </div>
 
@@ -750,24 +703,20 @@ const LeaveRequests = () => {
 
                   <div className="rounded-xl bg-[#f8fafc] p-3">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-[#94a3b8]">
-                      {t("leaveRequests.table.balance")}
+                      {t("leaveRequests.table.days")}
                     </p>
 
                     <p className="mt-1 text-xs text-[#475569]">
-                      {request.balance}
+                      {request.days}
                     </p>
                   </div>
                 </div>
 
                 {/* Reason */}
-                <button
-                  type="button"
-                  className="mt-4 flex items-center gap-2 text-xs font-semibold text-[#475569] underline underline-offset-2 transition hover:text-[#243B53] sm:text-sm"
-                >
-                  <FiFileText size={15} />
-
-                  {t("leaveRequests.viewReason")}
-                </button>
+                <p className="mt-4 flex items-start gap-2 text-xs text-[#475569] sm:text-sm">
+                  <FiFileText className="mt-0.5 shrink-0" size={15} />
+                  <span>{request.reason || "—"}</span>
+                </p>
 
                 {/* Buttons */}
                 <div className="mt-5 flex gap-2">
@@ -877,8 +826,12 @@ const LeaveRequests = () => {
 
                   <textarea
                     value={rejectNote}
-                    onChange={(event) => setRejectNote(event.target.value)}
+                    onChange={(event) => {
+                      setRejectNote(event.target.value);
+                      setRejectNoteError("");
+                    }}
                     rows={4}
+                    maxLength={2000}
                     placeholder={
                       isArabic
                         ? "اكتبي سبب رفض الطلب..."
@@ -886,6 +839,11 @@ const LeaveRequests = () => {
                     }
                     className="w-full resize-none rounded-lg border border-[#e2e8f0] bg-white px-3 py-2.5 text-xs text-[#334155] outline-none transition placeholder:text-[#94a3b8] focus:border-[#94a3b8] focus:ring-2 focus:ring-[#f1f5f9] sm:text-sm"
                   />
+                  {rejectNoteError && (
+                    <p className="mt-1.5 text-xs text-red-600" role="alert">
+                      {rejectNoteError}
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-6 flex gap-3">
@@ -900,7 +858,7 @@ const LeaveRequests = () => {
                   <button
                     type="button"
                     onClick={handleConfirmReject}
-                    disabled={!rejectNote.trim() || activeAction !== null}
+                    disabled={activeAction !== null}
                     className="flex-1 rounded-lg bg-[#dc2626] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#b91c1c] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
                   >
                     {activeAction === `reject-${rejectModal.request.id}` ? (
@@ -920,3 +878,112 @@ const LeaveRequests = () => {
 };
 
 export default LeaveRequests;
+
+function mapLeaveRequest(request, isArabic, t) {
+  const employee = request.user || request.employee || {};
+  const startDate = formatLeaveDate(request.start_date, isArabic);
+  const endDate = formatLeaveDate(request.end_date, isArabic);
+
+  return {
+    ...request,
+    name: employee.name || employee.full_name || "—",
+    role: employee.job_title || employee.role_label || employee.role || "—",
+    department:
+      employee.department?.name || employee.department_name || "—",
+    category:
+      getLocalizedLeaveTypeName(request.leave_type?.name, isArabic, t) ||
+      (isArabic ? "إجازة" : "Leave"),
+    dates: startDate === endDate ? startDate : `${startDate} – ${endDate}`,
+    days:
+      request.days == null
+        ? "—"
+        : new Intl.NumberFormat(isArabic ? "ar" : "en").format(request.days),
+    reason: getLocalizedLeaveReason(request.reason, isArabic, t),
+  };
+}
+
+function getLocalizedLeaveTypeName(name, isArabic, t) {
+  if (!name || !isArabic || /[\u0600-\u06ff]/i.test(name)) {
+    return name || "";
+  }
+
+  const normalizedName = name.trim().toLowerCase().replace(/[^a-z]/g, "");
+  const translations = [
+    { key: "annual", names: ["annual", "annualleave"] },
+    { key: "casual", names: ["casual", "casualleave"] },
+    { key: "sick", names: ["sick", "sickleave"] },
+    { key: "unpaid", names: ["unpaid", "unpaidleave"] },
+    { key: "emergency", names: ["emergency", "emergencyleave"] },
+  ];
+  const translation = translations.find(({ names }) =>
+    names.some((knownName) => normalizedName.endsWith(knownName)),
+  );
+
+  if (!translation) {
+    return name;
+  }
+
+  const translatedName = t(`leaveBalances.${translation.key}`);
+  return normalizedName.startsWith("new")
+    ? `${translatedName} ${t("leaveBalances.newTypeSuffix")}`
+    : translatedName;
+}
+
+function getLocalizedLeaveReason(reason, isArabic, t) {
+  if (!reason || !isArabic) {
+    return reason || "";
+  }
+
+  const normalizedReason = reason.trim().toLowerCase().replace(/[^a-z]/g, "");
+  const translations = [
+    { key: "familyTrip", values: ["familytrip"] },
+    { key: "medicalAppointment", values: ["medicalappointment"] },
+    { key: "personalTime", values: ["personaltime"] },
+    { key: "personalAppointment", values: ["personalappointment"] },
+  ];
+  const translation = translations.find(({ values }) =>
+    values.includes(normalizedReason),
+  );
+
+  return translation
+    ? t(`managerLeave.reasons.${translation.key}`)
+    : reason;
+}
+
+function formatLeaveDate(value, isArabic) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(isArabic ? "ar" : "en", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function getLeaveRequestError(error, fallback) {
+  const responseData = error?.response?.data;
+  const validationErrors =
+    responseData?.errors || responseData?.data?.errors || {};
+  const messages = Object.values(validationErrors)
+    .flat(Infinity)
+    .filter((value) => typeof value === "string");
+
+  if (messages.length > 0) {
+    return messages.join(" ");
+  }
+
+  return (
+    responseData?.message ||
+    responseData?.data?.message ||
+    (error?.response?.status
+      ? `${fallback} (HTTP ${error.response.status})`
+      : error?.message || fallback)
+  );
+}

@@ -11,9 +11,15 @@ import {
   FiChevronDown,
   FiChevronLeft,
   FiChevronRight,
-  FiCheck,
   FiFileText,
 } from "react-icons/fi";
+import {
+  useCreateEmployeeLeaveRequest,
+  useEmployeeLeaveBalances,
+  useEmployeeLeaveRequests,
+  useEmployeeLeaveTypes,
+  useUploadEmployeeLeaveAttachment,
+} from "../hooks/useEmployeeLeave";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -28,53 +34,49 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" } },
 };
 
+import { useHolidays } from "../../../hooks/useHolidays";
+
 export default function LeaveBalances() {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith("ar");
-
-  // ==========================================
-  // Leave Balances State
-  // ==========================================
-  const [balances, setBalances] = useState({
-    annual: { remaining: 13, total: 21 },
-    casual: { remaining: 4, total: 7 },
-    sick: { remaining: 8, total: 10 },
-  });
-
-  // ==========================================
-  // Recent Requests State
-  // ==========================================
-  const [recentRequests, setRecentRequests] = useState([
-    {
-      id: "req-1",
-      type: "casual",
-      typeLabelKey: "casual",
-      day: 14,
-      monthEn: "MAY",
-      monthAr: "مايو",
-      fullDateEn: "May 14 · 1 day",
-      fullDateAr: "14 مايو · يوم واحد",
-      status: "Approved",
-    },
-  ]);
-
-  // ==========================================
-  // Form State
-  // ==========================================
-  const [leaveType, setLeaveType] = useState("annual");
-  const [duration, setDuration] = useState("fullDay");
-  const [startDate, setStartDate] = useState("2026-06-22");
-  const [endDate, setEndDate] = useState("2026-06-24");
+  const { data: holidaysList } = useHolidays();
+  const lang = isRtl ? "ar" : "en";
+  const year = new Date().getFullYear();
+  const leaveTypesQuery = useEmployeeLeaveTypes(lang);
+  const balancesQuery = useEmployeeLeaveBalances(year, lang);
+  const requestsQuery = useEmployeeLeaveRequests(year, lang);
+  const createRequestMutation = useCreateEmployeeLeaveRequest(lang);
+  const uploadAttachmentMutation = useUploadEmployeeLeaveAttachment(lang);
+  const [leaveTypeId, setLeaveTypeId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
   const [attachedFile, setAttachedFile] = useState(null);
-  const [isSubmittedSuccess, setIsSubmittedSuccess] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const fileInputRef = useRef(null);
+  const leaveTypes = (leaveTypesQuery.data || []).filter(
+    (leaveType) => leaveType.is_active !== false,
+  );
+  const selectedLeaveType = leaveTypes.find(
+    (leaveType) => String(leaveType.id) === leaveTypeId,
+  );
+  const balances = balancesQuery.data || [];
+  const selectedBalance = balances.find(
+    (balance) => String(balance.leave_type_id) === leaveTypeId,
+  );
+  const recentRequests = requestsQuery.data || [];
 
   // ==========================================
   // Calendar Modal State
   // ==========================================
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState(new Date(2026, 4, 1)); // May 2026
+  const [calendarMonth, setCalendarMonth] = useState(
+    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+  );
+  const isSubmitting =
+    createRequestMutation.isPending || uploadAttachmentMutation.isPending;
+  const balanceCheckPending =
+    selectedLeaveType?.requires_balance && balancesQuery.isLoading;
 
   // ==========================================
   // File Attachment Handlers
@@ -94,81 +96,147 @@ export default function LeaveBalances() {
     }
   };
 
+  const resetRequestForm = () => {
+    setLeaveTypeId("");
+    setStartDate("");
+    setEndDate("");
+    setReason("");
+    setAttachedFile(null);
+    setFieldErrors({});
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   // ==========================================
   // Form Submission Handler
   // ==========================================
-  const handleSubmitRequest = (e) => {
+  const handleSubmitRequest = async (e) => {
     e.preventDefault();
+    setFieldErrors({});
 
-    if (!startDate || !endDate || !reason.trim()) {
-      toast.error(t("leaveBalances.toastFillRequired", "Please fill in all required fields"));
+    const errors = {};
+    if (!leaveTypeId) {
+      errors.leave_type_id = t(
+        "leaveBalances.validation.leaveType",
+        "Select a leave type.",
+      );
+    }
+    if (selectedLeaveType?.requires_balance) {
+      if (balancesQuery.isLoading) {
+        errors.leave_type_id = t(
+          "leaveBalances.validation.balanceLoading",
+          "Wait while your leave balance is checked.",
+        );
+      } else if (balancesQuery.isError) {
+        errors.leave_type_id = t(
+          "leaveBalances.validation.balanceUnavailable",
+          "Your leave balance could not be verified. Retry loading balances.",
+        );
+      } else if (!selectedBalance) {
+        errors.leave_type_id = t(
+          "leaveBalances.validation.balanceMissing",
+          "No balance is set up for this leave type. Contact HR to set it up.",
+        );
+      }
+    }
+
+    if (!startDate) {
+      errors.start_date = t(
+        "leaveBalances.validation.startDate",
+        "Select a start date.",
+      );
+    }
+    if (!endDate) {
+      errors.end_date = t(
+        "leaveBalances.validation.endDate",
+        "Select an end date.",
+      );
+    } else if (startDate && endDate < startDate) {
+      errors.end_date = t(
+        "leaveBalances.toastInvalidDates",
+        "End date cannot be earlier than start date.",
+      );
+    }
+    if (!reason.trim()) {
+      errors.reason = t(
+        "leaveBalances.validation.reason",
+        "Enter a reason for your request.",
+      );
+    }
+    if (selectedLeaveType?.requires_attachment && !attachedFile) {
+      errors.attachment = t(
+        "leaveBalances.validation.attachment",
+        "This leave type requires a supporting document.",
+      );
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    try {
+      const response = await createRequestMutation.mutateAsync({
+        leave_type_id: Number(leaveTypeId),
+        start_date: startDate,
+        end_date: endDate,
+        reason: reason.trim() || null,
+      });
+      const createdRequest = response?.data || response;
 
-    if (end < start) {
-      toast.error(t("leaveBalances.toastInvalidDates", "End date must be after start date"));
-      return;
+      if (attachedFile) {
+        if (!createdRequest?.id) {
+          toast.error(
+            t(
+              "leaveBalances.attachmentLinkError",
+              "The request was created, but its attachment could not be linked.",
+            ),
+          );
+          resetRequestForm();
+          return;
+        }
+
+        try {
+          await uploadAttachmentMutation.mutateAsync({
+            requestId: createdRequest.id,
+            file: attachedFile,
+          });
+        } catch (error) {
+          const uploadError =
+            error?.response?.data?.message || error?.message;
+          const message = t(
+            "leaveBalances.attachmentUploadError",
+            "The request was created, but the attachment could not be uploaded.",
+          );
+          toast.error(uploadError ? `${message} ${uploadError}` : message);
+          resetRequestForm();
+          return;
+        }
+      }
+
+      toast.success(
+        response?.message ||
+          t("leaveBalances.toastSubmitted", "Leave request submitted successfully!"),
+      );
+      resetRequestForm();
+    } catch (error) {
+      const { fieldErrors: apiFieldErrors, message } = getLeaveFormError(
+        error,
+        t("leaveBalances.toastSubmitError", "Could not submit the leave request."),
+      );
+
+      if (apiFieldErrors.leave_type_id === "balanceMissing") {
+        apiFieldErrors.leave_type_id = t(
+          "leaveBalances.validation.balanceMissing",
+          "No balance is set up for this leave type. Contact HR to set it up.",
+        );
+      }
+
+      if (Object.keys(apiFieldErrors).length > 0) {
+        setFieldErrors(apiFieldErrors);
+      } else {
+        toast.error(message);
+      }
     }
-
-    let daysCount = 1;
-    if (duration === "halfDayMorning" || duration === "halfDayEvening") {
-      daysCount = 0.5;
-    } else {
-      const diffTime = Math.abs(end - start);
-      daysCount = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    }
-
-    if (balances[leaveType] && balances[leaveType].remaining < daysCount) {
-      toast.error(t("leaveBalances.toastInsufficientBalance", "Insufficient leave balance"));
-      return;
-    }
-
-    // Deduct balance
-    if (balances[leaveType]) {
-      setBalances((prev) => ({
-        ...prev,
-        [leaveType]: {
-          ...prev[leaveType],
-          remaining: Math.max(0, prev[leaveType].remaining - daysCount),
-        },
-      }));
-    }
-
-    const monthNamesEn = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-    const monthNamesAr = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
-    const startDay = start.getDate();
-    const monthIndex = start.getMonth();
-
-    const newRequest = {
-      id: `req-${Date.now()}`,
-      type: leaveType,
-      typeLabelKey: leaveType,
-      day: startDay,
-      monthEn: monthNamesEn[monthIndex],
-      monthAr: monthNamesAr[monthIndex],
-      fullDateEn: `Jun 22 – Jun 24 · ${daysCount} days`,
-      fullDateAr: `22 يونيو – 24 يونيو · ${daysCount} أيام`,
-      status: "Pending",
-      reason: reason.trim(),
-    };
-
-    setRecentRequests((prev) => [newRequest, ...prev]);
-
-    // Toast العادي المحفوظ + حالة تحول الزر في الـ UI
-    toast.success(t("leaveBalances.toastSubmitted", "Leave request submitted successfully!"));
-    setIsSubmittedSuccess(true);
-
-    setTimeout(() => {
-      setIsSubmittedSuccess(false);
-    }, 3500);
-
-    // Reset fields
-    setReason("");
-    setAttachedFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   // Calendar Days
@@ -233,125 +301,93 @@ export default function LeaveBalances() {
         </motion.button>
       </motion.div>
 
-      {/* 2. Balance Cards Grid (3 Columns) */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {/* Card 1: Annual Leave */}
-        <motion.div
-          whileHover={{ y: -2 }}
-          className="rounded-2xl border border-[#e2e8f0] bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold text-[#94a3b8] tracking-wider uppercase">
-              {t("leaveBalances.annualLeave", "ANNUAL LEAVE")}
-            </span>
-            <FiCalendar className="w-4 h-4 text-[#cbd5e1]" />
-          </div>
-
-          <div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl md:text-3xl font-bold text-[#102a43] leading-none">
-                {balances.annual.remaining}
-              </span>
-              <span className="text-xs text-[#829ab1]">
-                / {balances.annual.total} {t("leaveBalances.days", "days")}
-              </span>
-            </div>
-
-            <div className="w-full bg-[#f1f5f9] h-1.5 rounded-full mt-3 overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{
-                  width: `${Math.min(100, (balances.annual.remaining / balances.annual.total) * 100)}%`,
-                }}
-                transition={{ duration: 0.8, ease: "easeOut" }}
-                className="bg-[#486581] h-full rounded-full"
-              />
-            </div>
-          </div>
-
-          <span className="text-[11px] font-bold tracking-wider text-[#94a3b8] uppercase mt-3 block">
-            {balances.annual.remaining} {t("leaveBalances.daysRemainingText", "DAYS REMAINING")}
+      {/* 2. Balance Cards Grid */}
+      {balancesQuery.isError ? (
+        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+          <span>
+            {t("leaveBalances.balanceLoadError", "Could not load leave balances.")}
           </span>
-        </motion.div>
-
-        {/* Card 2: Casual Leave */}
+          <button
+            type="button"
+            onClick={() => balancesQuery.refetch()}
+            disabled={balancesQuery.isFetching}
+            className="ms-3 font-semibold underline disabled:opacity-50"
+          >
+            {t("leaveBalances.retry", "Retry")}
+          </button>
+        </div>
+      ) : balancesQuery.isLoading ? (
+        <p className="text-sm text-[#64748b]">
+          {t("leaveBalances.loadingBalances", "Loading leave balances...")}
+        </p>
+      ) : balances.length === 0 ? (
+        <p className="rounded-2xl border border-[#e2e8f0] bg-white p-6 text-sm text-[#64748b]">
+          {t("leaveBalances.noBalances", "No leave balances are available.")}
+        </p>
+      ) : (
         <motion.div
-          whileHover={{ y: -2 }}
-          className="rounded-2xl border border-[#e2e8f0] bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between"
+          variants={itemVariants}
+          className="grid grid-cols-1 gap-5 md:grid-cols-3"
         >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold text-[#94a3b8] tracking-wider uppercase">
-              {t("leaveBalances.casualLeave", "CASUAL LEAVE")}
-            </span>
-            <FiCalendar className="w-4 h-4 text-[#cbd5e1]" />
-          </div>
+          {balances.map((balance) => {
+            const allocated = Number(balance.allocated_days) || 0;
+            const remaining = Number(balance.remaining_days) || 0;
+            const progress = allocated
+              ? Math.min(100, (remaining / allocated) * 100)
+              : 0;
 
-          <div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl md:text-3xl font-bold text-[#102a43] leading-none">
-                {balances.casual.remaining}
-              </span>
-              <span className="text-xs text-[#829ab1]">
-                / {balances.casual.total} {t("leaveBalances.days", "days")}
-              </span>
-            </div>
-
-            <div className="w-full bg-[#f1f5f9] h-1.5 rounded-full mt-3 overflow-hidden">
+            return (
               <motion.div
-                initial={{ width: 0 }}
-                animate={{
-                  width: `${Math.min(100, (balances.casual.remaining / balances.casual.total) * 100)}%`,
-                }}
-                transition={{ duration: 0.8, ease: "easeOut", delay: 0.1 }}
-                className="bg-[#d97706] h-full rounded-full"
-              />
-            </div>
-          </div>
+                key={balance.id}
+                whileHover={{ y: -2 }}
+                className="flex flex-col justify-between rounded-2xl border border-[#e2e8f0] bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#94a3b8]">
+                    {getLocalizedLeaveTypeName(
+                      balance.leave_type?.name,
+                      isRtl,
+                      t,
+                    )}
+                  </span>
+                  <FiCalendar className="h-4 w-4 text-[#cbd5e1]" />
+                </div>
 
-          <span className="text-[11px] font-bold tracking-wider text-[#94a3b8] uppercase mt-3 block">
-            {balances.casual.remaining} {t("leaveBalances.daysRemainingText", "DAYS REMAINING")}
-          </span>
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-bold leading-none text-[#102a43] md:text-3xl">
+                      {formatLeaveNumber(remaining, lang)}
+                    </span>
+                    <span className="text-xs text-[#829ab1]">
+                      / {formatLeaveNumber(allocated, lang)}{" "}
+                      {t("leaveBalances.days", "days")}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#f1f5f9]">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${progress}%` }}
+                      transition={{ duration: 0.8, ease: "easeOut" }}
+                      className="h-full rounded-full bg-[#486581]"
+                    />
+                  </div>
+                </div>
+
+                <span className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-[#94a3b8]">
+                  {remaining === 1
+                    ? t("leaveBalances.daysRemainingSingle", {
+                        count: formatLeaveNumber(remaining, lang),
+                      })
+                    : t("leaveBalances.daysRemaining", {
+                        count: formatLeaveNumber(remaining, lang),
+                      })}
+                </span>
+              </motion.div>
+            );
+          })}
         </motion.div>
-
-        {/* Card 3: Sick Leave */}
-        <motion.div
-          whileHover={{ y: -2 }}
-          className="rounded-2xl border border-[#e2e8f0] bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold text-[#94a3b8] tracking-wider uppercase">
-              {t("leaveBalances.sickLeave", "SICK LEAVE")}
-            </span>
-            <FiCalendar className="w-4 h-4 text-[#cbd5e1]" />
-          </div>
-
-          <div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl md:text-3xl font-bold text-[#102a43] leading-none">
-                {balances.sick.remaining}
-              </span>
-              <span className="text-xs text-[#829ab1]">
-                / {balances.sick.total} {t("leaveBalances.days", "days")}
-              </span>
-            </div>
-
-            <div className="w-full bg-[#f1f5f9] h-1.5 rounded-full mt-3 overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{
-                  width: `${Math.min(100, (balances.sick.remaining / balances.sick.total) * 100)}%`,
-                }}
-                transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-                className="bg-[#059669] h-full rounded-full"
-              />
-            </div>
-          </div>
-
-          <span className="text-[11px] font-bold tracking-wider text-[#94a3b8] uppercase mt-3 block">
-            {balances.sick.remaining} {t("leaveBalances.daysRemainingText", "DAYS REMAINING")}
-          </span>
-        </motion.div>
-      </motion.div>
+      )}
 
       {/* 3. Main Section: Request Leave Form + Recent Requests */}
       <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -370,74 +406,155 @@ export default function LeaveBalances() {
           </div>
 
           <form onSubmit={handleSubmitRequest} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {/* Leave Type */}
               <div>
                 <label className="text-xs font-semibold text-[#64748b] mb-1.5 block">
                   {t("leaveBalances.leaveType", "Leave type")}
+                  <span className="ms-1 text-red-600" aria-hidden="true">
+                    *
+                  </span>
                 </label>
                 <div className="relative">
                   <select
-                    value={leaveType}
-                    onChange={(e) => setLeaveType(e.target.value)}
-                    className="w-full h-10 px-3.5 bg-white border border-[#d9e2ec] rounded-xl text-xs text-[#102a43] font-medium appearance-none focus:outline-none focus:border-[#486581] focus:ring-1 focus:ring-[#486581] transition cursor-pointer"
+                    value={leaveTypeId}
+                    aria-required="true"
+                    onChange={(e) => {
+                      setLeaveTypeId(e.target.value);
+                      setFieldErrors((current) => ({
+                        ...current,
+                        leave_type_id: "",
+                        attachment: "",
+                      }));
+                    }}
+                    disabled={
+                      leaveTypesQuery.isLoading ||
+                      leaveTypesQuery.isError ||
+                      leaveTypes.length === 0
+                    }
+                    className="w-full h-10 px-3.5 bg-white border border-[#d9e2ec] rounded-xl text-xs text-[#102a43] font-medium appearance-none focus:outline-none focus:border-[#486581] focus:ring-1 focus:ring-[#486581] transition cursor-pointer disabled:opacity-60"
                   >
-                    <option value="annual">{t("leaveBalances.annual", "Annual leave")}</option>
-                    <option value="casual">{t("leaveBalances.casual", "Casual leave")}</option>
-                    <option value="sick">{t("leaveBalances.sick", "Sick leave")}</option>
-                    <option value="unpaid">{t("leaveBalances.unpaid", "Unpaid leave")}</option>
+                    <option value="" disabled hidden>
+                      {leaveTypesQuery.isLoading
+                        ? t("leaveBalances.loadingTypes", "Loading leave types...")
+                        : t("leaveBalances.selectLeaveType", "Select leave type")}
+                    </option>
+                    {leaveTypes.map((leaveType) => (
+                      <option key={leaveType.id} value={leaveType.id}>
+                        {getLocalizedLeaveTypeName(leaveType.name, isRtl, t)}
+                      </option>
+                    ))}
                   </select>
                   <FiChevronDown
                     className={`absolute ${isRtl ? "left-3.5" : "right-3.5"} top-1/2 -translate-y-1/2 text-[#64748b] pointer-events-none w-4 h-4`}
                   />
                 </div>
-              </div>
-
-              {/* Duration */}
-              <div>
-                <label className="text-xs font-semibold text-[#64748b] mb-1.5 block">
-                  {t("leaveBalances.duration", "Duration")}
-                </label>
-                <div className="relative">
-                  <select
-                    value={duration}
-                    onChange={(e) => setDuration(e.target.value)}
-                    className="w-full h-10 px-3.5 bg-white border border-[#d9e2ec] rounded-xl text-xs text-[#102a43] font-medium appearance-none focus:outline-none focus:border-[#486581] focus:ring-1 focus:ring-[#486581] transition cursor-pointer"
-                  >
-                    <option value="fullDay">{t("leaveBalances.fullDay", "Full day")}</option>
-                    <option value="halfDayMorning">{t("leaveBalances.halfDayMorning", "Half day (Morning)")}</option>
-                    <option value="halfDayEvening">{t("leaveBalances.halfDayEvening", "Half day (Evening)")}</option>
-                  </select>
-                  <FiChevronDown
-                    className={`absolute ${isRtl ? "left-3.5" : "right-3.5"} top-1/2 -translate-y-1/2 text-[#64748b] pointer-events-none w-4 h-4`}
-                  />
-                </div>
+                {fieldErrors.leave_type_id && (
+                  <p className="mt-1.5 text-xs text-red-600" role="alert">
+                    {fieldErrors.leave_type_id}
+                  </p>
+                )}
+                {balancesQuery.isError && (
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <p className="text-xs text-red-600">
+                      {balancesQuery.error?.response?.data?.message ||
+                        t(
+                          "leaveBalances.balanceLoadError",
+                          "Could not load leave balances.",
+                        )}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => balancesQuery.refetch()}
+                      disabled={balancesQuery.isFetching}
+                      className="shrink-0 text-xs font-semibold text-red-700 underline disabled:opacity-50"
+                    >
+                      {t("leaveBalances.retry", "Retry")}
+                    </button>
+                  </div>
+                )}
+                {leaveTypesQuery.isError && (
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <p className="text-xs text-red-600">
+                      {leaveTypesQuery.error?.response?.data?.message ||
+                        t("leaveBalances.typeLoadError", "Could not load leave types.")}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => leaveTypesQuery.refetch()}
+                      disabled={leaveTypesQuery.isFetching}
+                      className="shrink-0 text-xs font-semibold text-red-700 underline disabled:opacity-50"
+                    >
+                      {t("leaveBalances.retry", "Retry")}
+                    </button>
+                  </div>
+                )}
+                {!leaveTypesQuery.isLoading &&
+                  !leaveTypesQuery.isError &&
+                  leaveTypes.length === 0 && (
+                    <p className="mt-1.5 text-xs text-[#64748b]">
+                      {t("leaveBalances.noLeaveTypes", "No leave types are available.")}
+                    </p>
+                  )}
               </div>
 
               {/* Start Date */}
               <div>
                 <label className="text-xs font-semibold text-[#64748b] mb-1.5 block">
                   {t("leaveBalances.startDate", "Start date")}
+                  <span className="ms-1 text-red-600" aria-hidden="true">
+                    *
+                  </span>
                 </label>
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  aria-required="true"
+                  min={getTodayDate()}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setFieldErrors((current) => ({
+                      ...current,
+                      start_date: "",
+                      end_date: "",
+                    }));
+                  }}
                   className="w-full h-10 px-3.5 bg-white border border-[#d9e2ec] rounded-xl text-xs text-[#102a43] font-medium focus:outline-none focus:border-[#486581] focus:ring-1 focus:ring-[#486581] transition"
                 />
+                {fieldErrors.start_date && (
+                  <p className="mt-1.5 text-xs text-red-600" role="alert">
+                    {fieldErrors.start_date}
+                  </p>
+                )}
               </div>
 
               {/* End Date */}
               <div>
                 <label className="text-xs font-semibold text-[#64748b] mb-1.5 block">
                   {t("leaveBalances.endDate", "End date")}
+                  <span className="ms-1 text-red-600" aria-hidden="true">
+                    *
+                  </span>
                 </label>
                 <input
                   type="date"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  aria-required="true"
+                  min={startDate || getTodayDate()}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setFieldErrors((current) => ({
+                      ...current,
+                      end_date: "",
+                    }));
+                  }}
                   className="w-full h-10 px-3.5 bg-white border border-[#d9e2ec] rounded-xl text-xs text-[#102a43] font-medium focus:outline-none focus:border-[#486581] focus:ring-1 focus:ring-[#486581] transition"
                 />
+                {fieldErrors.end_date && (
+                  <p className="mt-1.5 text-xs text-red-600" role="alert">
+                    {fieldErrors.end_date}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -445,14 +562,26 @@ export default function LeaveBalances() {
             <div>
               <label className="text-xs font-semibold text-[#64748b] mb-1.5 block">
                 {t("leaveBalances.reason", "Reason")}
+                <span className="ms-1 text-red-600" aria-hidden="true">
+                  *
+                </span>
               </label>
               <textarea
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                aria-required="true"
+                onChange={(e) => {
+                  setReason(e.target.value);
+                  setFieldErrors((current) => ({ ...current, reason: "" }));
+                }}
                 placeholder={t("leaveBalances.reasonPlaceholder", "Add a reason for your request...")}
                 rows={3}
                 className="w-full p-3.5 bg-white border border-[#d9e2ec] rounded-xl text-xs text-[#102a43] placeholder-[#94a3b8] focus:outline-none focus:border-[#486581] focus:ring-1 focus:ring-[#486581] transition resize-none"
               />
+              {fieldErrors.reason && (
+                <p className="mt-1.5 text-xs text-red-600" role="alert">
+                  {fieldErrors.reason}
+                </p>
+              )}
             </div>
 
             {/* Attach Document (Dashed Box) */}
@@ -461,7 +590,13 @@ export default function LeaveBalances() {
                 ref={fileInputRef}
                 type="file"
                 className="hidden"
-                onChange={handleFileChange}
+                onChange={(event) => {
+                  handleFileChange(event);
+                  setFieldErrors((current) => ({
+                    ...current,
+                    attachment: "",
+                  }));
+                }}
               />
               <div
                 onClick={() => fileInputRef.current?.click()}
@@ -482,6 +617,11 @@ export default function LeaveBalances() {
                   ) : (
                     <span className="text-xs font-medium text-[#64748b]">
                       {t("leaveBalances.attachDocument", "Attach supporting document")}
+                      {selectedLeaveType?.requires_attachment && (
+                        <span className="ms-1 text-red-600" aria-hidden="true">
+                          *
+                        </span>
+                      )}
                     </span>
                   )}
                 </div>
@@ -496,6 +636,11 @@ export default function LeaveBalances() {
                   </button>
                 )}
               </div>
+              {fieldErrors.attachment && (
+                <p className="mt-1.5 text-xs text-red-600" role="alert">
+                  {fieldErrors.attachment}
+                </p>
+              )}
             </div>
 
             {/* Submit Button (Animated State transition) */}
@@ -504,13 +649,20 @@ export default function LeaveBalances() {
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
                 type="submit"
-                className="px-5 py-2.5 bg-[#102a43] hover:bg-[#1a3857] text-white text-xs font-semibold rounded-xl shadow-sm flex items-center gap-2 transition cursor-pointer"
+                disabled={
+                  isSubmitting ||
+                  leaveTypesQuery.isLoading ||
+                  leaveTypes.length === 0 ||
+                  balanceCheckPending
+                }
+                className="px-5 py-2.5 bg-[#102a43] hover:bg-[#1a3857] text-white text-xs font-semibold rounded-xl shadow-sm flex items-center gap-2 transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isSubmittedSuccess ? (
-                  <>
-                    <FiCheck className="w-4 h-4 text-[#4ade80]" />
-                    <span>{t("leaveBalances.requestSubmitted", "Request submitted")}</span>
-                  </>
+                {isSubmitting ? (
+                  <span>
+                    {uploadAttachmentMutation.isPending
+                      ? t("leaveBalances.uploadingAttachment", "Uploading attachment...")
+                      : t("leaveBalances.submitting", "Submitting...")}
+                  </span>
                 ) : (
                   <>
                     <span>{t("leaveBalances.submitRequest", "Submit request")}</span>
@@ -533,51 +685,104 @@ export default function LeaveBalances() {
             </p>
           </div>
 
-          <div className="space-y-3">
-            <AnimatePresence initial={false}>
-              {recentRequests.map((req) => (
-                <motion.div
-                  key={req.id}
-                  initial={{ opacity: 0, y: -10, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.25, ease: "easeOut" }}
-                  className="flex items-center justify-between p-3 rounded-xl border border-[#f1f5f9] hover:bg-[#f8fafc] transition gap-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-[#ecfdf5] text-[#059669] flex flex-col items-center justify-center font-bold shrink-0">
-                      <span className="text-sm leading-none">{req.day}</span>
-                      <span className="text-[9px] tracking-wide uppercase leading-tight mt-0.5">
-                        {isRtl ? req.monthAr : req.monthEn}
-                      </span>
-                    </div>
+          {requestsQuery.isError ? (
+            <div className="rounded-xl bg-red-50 p-3 text-xs text-red-700">
+              <p>
+                {requestsQuery.error?.response?.data?.message ||
+                  t("leaveBalances.requestHistoryError", "Could not load your leave requests.")}
+              </p>
+              <button
+                type="button"
+                onClick={() => requestsQuery.refetch()}
+                disabled={requestsQuery.isFetching}
+                className="mt-2 font-semibold underline disabled:opacity-50"
+              >
+                {t("leaveBalances.retry", "Retry")}
+              </button>
+            </div>
+          ) : requestsQuery.isLoading ? (
+            <p className="text-xs text-[#64748b]">
+              {t("leaveBalances.loadingRequests", "Loading your leave requests...")}
+            </p>
+          ) : recentRequests.length === 0 ? (
+            <p className="text-xs text-[#64748b]">
+              {t("leaveBalances.noRecentRequests", "No recent requests recorded.")}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <AnimatePresence initial={false}>
+                {recentRequests.map((request) => {
+                  const status = String(request.status || "").toLowerCase();
+                  const statusLabel =
+                    status === "approved"
+                      ? t("leaveBalances.statusApproved", "Approved")
+                      : status === "rejected"
+                        ? t("leaveBalances.statusRejected", "Rejected")
+                        : status === "cancelled"
+                          ? t("leaveBalances.statusCancelled", "Cancelled")
+                          : t("leaveBalances.statusPending", "Pending");
+                  const statusStyle =
+                    status === "approved"
+                      ? "bg-[#ecfdf5] text-[#059669]"
+                      : status === "rejected" || status === "cancelled"
+                        ? "bg-[#fef2f2] text-[#dc2626]"
+                        : "bg-[#fefce8] text-[#d97706]";
 
-                    <div>
-                      <h3 className="text-xs font-bold text-[#102a43] capitalize">
-                        {req.type} leave
-                      </h3>
-                      <p className="text-[11px] text-[#64748b] mt-0.5">
-                        {isRtl ? req.fullDateAr : req.fullDateEn}
-                      </p>
-                    </div>
-                  </div>
+                  return (
+                    <motion.div
+                      key={request.id}
+                      initial={{ opacity: 0, y: -10, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.25, ease: "easeOut" }}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-[#f1f5f9] p-3 transition hover:bg-[#f8fafc]"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-[#eff6ff] font-bold text-[#2563eb]">
+                          <span className="text-sm leading-none">
+                            {formatLeaveDay(request.start_date, lang)}
+                          </span>
+                          <span className="mt-0.5 text-[9px] uppercase leading-tight">
+                            {formatLeaveMonth(request.start_date, lang)}
+                          </span>
+                        </div>
 
-                  <div>
-                    {req.status === "Approved" && (
-                      <span className="inline-block bg-[#ecfdf5] text-[#059669] text-xs font-medium px-2.5 py-0.5 rounded-full">
-                        {t("leaveBalances.statusApproved", "Approved")}
+                        <div className="min-w-0">
+                          <h3 className="truncate text-xs font-bold capitalize text-[#102a43]">
+                            {getLocalizedLeaveTypeName(
+                              request.leave_type?.name,
+                              isRtl,
+                              t,
+                            )}
+                          </h3>
+                          <p className="mt-0.5 text-[11px] text-[#64748b]">
+                            {formatLeaveDateRange(
+                              request.start_date,
+                              request.end_date,
+                              lang,
+                            )}
+                            {request.days != null &&
+                              ` · ${formatLeaveNumber(request.days, lang)} ${t(
+                                Number(request.days) === 1
+                                  ? "leaveBalances.day"
+                                  : "leaveBalances.daysPlural",
+                                Number(request.days) === 1 ? "day" : "days",
+                              )}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${statusStyle}`}
+                      >
+                        {statusLabel}
                       </span>
-                    )}
-                    {req.status === "Pending" && (
-                      <span className="inline-block bg-[#fefce8] text-[#d97706] text-xs font-medium px-2.5 py-0.5 rounded-full">
-                        {t("leaveBalances.statusPending", "Pending")}
-                      </span>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       </motion.div>
 
@@ -665,21 +870,72 @@ export default function LeaveBalances() {
                     return <div key={`empty-${idx}`} className="h-9 rounded-lg" />;
                   }
 
-                  const isCasualLeaveDay = calendarMonth.getMonth() === 4 && item.day === 14;
-                  const isScheduledAnnual = calendarMonth.getMonth() === 5 && item.day >= 22 && item.day <= 24;
+                  const currentDayDate = new Date(
+                    calendarMonth.getFullYear(),
+                    calendarMonth.getMonth(),
+                    item.day,
+                  );
+                  const holidayItem = (holidaysList || []).find((h) => {
+                    if (!h.start_date) return false;
+                    const start = new Date(h.start_date);
+                    const end = h.end_date ? new Date(h.end_date) : start;
+                    const cur = currentDayDate.getTime();
+                    return (
+                      cur >= new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime() &&
+                      cur <= new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime()
+                    );
+                  });
+
+                  const dayKey = [
+                    calendarMonth.getFullYear(),
+                    String(calendarMonth.getMonth() + 1).padStart(2, "0"),
+                    String(item.day).padStart(2, "0"),
+                  ].join("-");
+                  const leaveOnDay = recentRequests.find((request) => {
+                    const status = String(request.status || "").toLowerCase();
+                    return (
+                      (status === "approved" || status === "pending") &&
+                      request.start_date <= dayKey &&
+                      request.end_date >= dayKey
+                    );
+                  });
+                  const isApprovedLeave =
+                    String(leaveOnDay?.status || "").toLowerCase() === "approved";
+
+                  const cellTitle = holidayItem
+                    ? leaveOnDay
+                      ? `${holidayItem.name} · ${getLocalizedLeaveTypeName(
+                          leaveOnDay.leave_type?.name,
+                          isRtl,
+                          t,
+                        )} (${leaveOnDay.status})`
+                      : holidayItem.name
+                    : leaveOnDay
+                    ? `${getLocalizedLeaveTypeName(
+                        leaveOnDay.leave_type?.name,
+                        isRtl,
+                        t,
+                      )} ${leaveOnDay.status}`
+                    : undefined;
 
                   return (
                     <div
                       key={`day-${item.day}`}
-                      className={`h-9 rounded-lg flex flex-col items-center justify-center text-xs font-semibold relative transition ${
-                        isCasualLeaveDay
-                          ? "bg-[#ecfdf5] text-[#059669] font-bold border border-[#a7f3d0]"
-                          : isScheduledAnnual
-                          ? "bg-[#eff6ff] text-[#2563eb] font-bold border border-[#bfdbfe]"
+                      title={cellTitle}
+                      className={`relative flex h-9 flex-col items-center justify-center rounded-lg text-xs font-semibold transition ${
+                        holidayItem
+                          ? "bg-amber-50 text-amber-800 font-bold border border-amber-200"
+                          : leaveOnDay && isApprovedLeave
+                          ? "border border-[#a7f3d0] bg-[#ecfdf5] font-bold text-[#059669]"
+                          : leaveOnDay
+                          ? "border border-[#bfdbfe] bg-[#eff6ff] font-bold text-[#2563eb]"
                           : "text-[#334155] hover:bg-[#f8fafc]"
                       }`}
                     >
                       <span>{item.day}</span>
+                      {holidayItem && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 absolute bottom-1" />
+                      )}
                     </div>
                   );
                 })}
@@ -687,14 +943,18 @@ export default function LeaveBalances() {
 
               {/* Footer */}
               <div className="flex items-center justify-between pt-4 mt-4 border-t border-[#f1f5f9]">
-                <div className="flex items-center gap-3 text-xs text-[#64748b]">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-[#64748b]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-100 border border-amber-300" />
+                    <span>Official Holiday</span>
+                  </div>
                   <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-[#ecfdf5] border border-[#a7f3d0]" />
-                    <span>Casual</span>
+                    <span>{t("leaveBalances.statusApproved", "Approved")}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-[#eff6ff] border border-[#bfdbfe]" />
-                    <span>Annual</span>
+                    <span>{t("leaveBalances.statusPending", "Pending")}</span>
                   </div>
                 </div>
 
@@ -712,4 +972,127 @@ export default function LeaveBalances() {
       </AnimatePresence>
     </motion.div>
   );
+}
+
+function getTodayDate() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatLeaveNumber(value, lang) {
+  return new Intl.NumberFormat(lang, {
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0);
+}
+
+function getLocalizedLeaveTypeName(name, isArabic, t) {
+  if (!name || !isArabic || /[\u0600-\u06ff]/i.test(name)) {
+    return name || "—";
+  }
+
+  const normalizedName = name.trim().toLowerCase().replace(/[^a-z]/g, "");
+  const translations = [
+    { key: "annual", names: ["annual", "annualleave"] },
+    { key: "casual", names: ["casual", "casualleave"] },
+    { key: "sick", names: ["sick", "sickleave"] },
+    { key: "unpaid", names: ["unpaid", "unpaidleave"] },
+    { key: "emergency", names: ["emergency", "emergencyleave"] },
+  ];
+  const translation = translations.find(({ names }) =>
+    names.some((knownName) => normalizedName.endsWith(knownName)),
+  );
+
+  if (!translation) {
+    return name;
+  }
+
+  const translatedName = t(`leaveBalances.${translation.key}`);
+  return normalizedName.startsWith("new")
+    ? `${translatedName} ${t("leaveBalances.newTypeSuffix")}`
+    : translatedName;
+}
+
+function parseLeaveDate(value) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatLeaveDay(value, lang) {
+  const date = parseLeaveDate(value);
+  return date ? new Intl.NumberFormat(lang).format(date.getDate()) : "—";
+}
+
+function formatLeaveMonth(value, lang) {
+  const date = parseLeaveDate(value);
+  return date
+    ? new Intl.DateTimeFormat(lang, { month: "short" }).format(date)
+    : "";
+}
+
+function formatLeaveDateRange(start, end, lang) {
+  const formatDate = (value) => {
+    const date = parseLeaveDate(value);
+    return date
+      ? new Intl.DateTimeFormat(lang, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        }).format(date)
+      : value || "—";
+  };
+
+  return start === end
+    ? formatDate(start)
+    : `${formatDate(start)} – ${formatDate(end)}`;
+}
+
+function getLeaveFormError(error, fallback) {
+  const responseData = error?.response?.data;
+  const apiMessage =
+    responseData?.message || responseData?.data?.message || "";
+  const validationErrors =
+    responseData?.errors || responseData?.data?.errors || {};
+  const fieldNames = {
+    leave_type_id: "leave_type_id",
+    start_date: "start_date",
+    end_date: "end_date",
+    reason: "reason",
+    file: "attachment",
+    attachment: "attachment",
+  };
+  const fieldErrors = {};
+  const unmappedMessages = [];
+
+  Object.entries(validationErrors).forEach(([field, value]) => {
+    const messages = Array.isArray(value) ? value : [value];
+    const text = messages
+      .filter((message) => typeof message === "string")
+      .join(" ");
+    if (!text) return;
+
+    const mappedField = fieldNames[field];
+    if (mappedField) {
+      fieldErrors[mappedField] = text;
+    } else {
+      unmappedMessages.push(text);
+    }
+  });
+
+  if (/leave balance does not exist/i.test(apiMessage)) {
+    fieldErrors.leave_type_id = "balanceMissing";
+  }
+
+  return {
+    fieldErrors,
+    message:
+      unmappedMessages.join(" ") ||
+      apiMessage ||
+      (error?.response?.status
+        ? `${fallback} (HTTP ${error.response.status})`
+        : error?.message || fallback),
+  };
 }

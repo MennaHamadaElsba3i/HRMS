@@ -1,26 +1,41 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, X, BookOpen, Download } from "lucide-react";
+import { Plus, X, BookOpen, Download, Loader2, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 /* =====================================================
-   DATA
+   API ENDPOINT (رابط الـ Backend الخاص بـ الـ Database)
 ===================================================== */
+const API_URL = "/api/hr/policies";
 
-const initialPolicies = [
-  {
-    id: "punctuality",
-    translationKey: "punctuality",
-  },
-  {
-    id: "leave",
-    translationKey: "leave",
-  },
-  {
-    id: "salary-advance",
-    translationKey: "salaryAdvance",
-  },
+/* =====================================================
+   LOCAL STORAGE (حل مؤقت — البيانات متضيعش مع الـ Refresh)
+===================================================== */
+const STORAGE_KEY = "hr_company_policies";
+
+const DEFAULT_POLICIES = [
+  { id: "punctuality", translationKey: "punctuality" },
+  { id: "leave", translationKey: "leave" },
+  { id: "salary-advance", translationKey: "salaryAdvance" },
 ];
+
+const loadLocalPolicies = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : DEFAULT_POLICIES;
+  } catch (error) {
+    console.error("Error reading localStorage:", error);
+    return DEFAULT_POLICIES;
+  }
+};
+
+const saveLocalPolicies = (policies) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(policies));
+  } catch (error) {
+    console.error("Error writing localStorage:", error);
+  }
+};
 
 /* =====================================================
    MOTION
@@ -79,7 +94,7 @@ const modalVariants = {
    POLICY CARD
 ===================================================== */
 
-function PolicyCard({ policy, onEdit }) {
+function PolicyCard({ policy, onEdit, onDelete }) {
   const { t } = useTranslation();
 
   const isTranslatedPolicy = Boolean(policy.translationKey);
@@ -98,7 +113,7 @@ function PolicyCard({ policy, onEdit }) {
 
   const version = isTranslatedPolicy
     ? t(`hrCompanyPolicies.policies.${policy.translationKey}.version`)
-    : policy.version;
+    : policy.version || "v1.0";
 
   return (
     <motion.div
@@ -118,7 +133,7 @@ function PolicyCard({ policy, onEdit }) {
       "
     >
       {/* =====================================================
-          ICON + STATUS
+         ICON + STATUS
       ===================================================== */}
 
       <div className="flex items-start justify-between gap-4">
@@ -158,7 +173,7 @@ function PolicyCard({ policy, onEdit }) {
       </div>
 
       {/* =====================================================
-          TITLE
+         TITLE
       ===================================================== */}
 
       <h3 className="mt-4 text-base font-bold tracking-tight text-[#1e293b]">
@@ -166,7 +181,7 @@ function PolicyCard({ policy, onEdit }) {
       </h3>
 
       {/* =====================================================
-          DESCRIPTION
+         DESCRIPTION
       ===================================================== */}
 
       <p className="mt-1 text-sm font-normal leading-6 text-[#64748b]">
@@ -174,7 +189,7 @@ function PolicyCard({ policy, onEdit }) {
       </p>
 
       {/* =====================================================
-          POLICY DETAILS
+         POLICY DETAILS
       ===================================================== */}
 
       <div className="mt-5 grid grid-cols-2 gap-4 border-t border-[#f1f5f9] pt-4">
@@ -198,7 +213,7 @@ function PolicyCard({ policy, onEdit }) {
       </div>
 
       {/* =====================================================
-          ACTIONS
+         ACTIONS
       ===================================================== */}
 
       <div className="mt-5 flex items-center justify-between gap-3 border-t border-[#f1f5f9] pt-4">
@@ -224,29 +239,47 @@ function PolicyCard({ policy, onEdit }) {
           {t("hrCompanyPolicies.editDocument")}
         </button>
 
-        {/* DOWNLOAD */}
+        {/* DOWNLOAD + DELETE */}
 
-        <button
-          type="button"
-          className="
-            inline-flex
-            items-center
-            gap-1.5
-            rounded-lg
-            px-2
-            py-2
-            text-xs
-            font-semibold
-            text-[#475569]
-            transition
-            hover:bg-[#f8fafc]
-            hover:text-[#243B53]
-          "
-        >
-          <Download className="h-3.5 w-3.5" />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className="
+              inline-flex
+              items-center
+              gap-1.5
+              rounded-lg
+              px-2
+              py-2
+              text-xs
+              font-semibold
+              text-[#475569]
+              transition
+              hover:bg-[#f8fafc]
+              hover:text-[#243B53]
+            "
+          >
+            <Download className="h-3.5 w-3.5" />
 
-          {t("hrCompanyPolicies.downloadPdf")}
-        </button>
+            {t("hrCompanyPolicies.downloadPdf")}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onDelete(policy)}
+            aria-label={t("hrCompanyPolicies.delete")}
+            className="
+              rounded-lg
+              p-2
+              text-[#94a3b8]
+              transition
+              hover:bg-[#fef2f2]
+              hover:text-[#dc2626]
+            "
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </motion.div>
   );
@@ -286,6 +319,7 @@ function AddPolicyModal({ onClose, onSave, editingPolicy }) {
   const [title, setTitle] = useState(getInitialTitle());
   const [effectiveDate, setEffectiveDate] = useState(getInitialEffectiveDate());
   const [owner, setOwner] = useState(editingPolicy?.owner || "");
+  const [loading, setLoading] = useState(false);
 
   const isEditing = Boolean(editingPolicy);
 
@@ -293,14 +327,16 @@ function AddPolicyModal({ onClose, onSave, editingPolicy }) {
      SAVE FORM
   ===================================================== */
 
-  const handleSave = () => {
+  const handleFormSubmit = async () => {
     if (!title.trim()) return;
 
-    onSave({
+    setLoading(true);
+    await onSave({
       title,
       effectiveDate,
       owner,
     });
+    setLoading(false);
   };
 
   return (
@@ -496,6 +532,7 @@ function AddPolicyModal({ onClose, onSave, editingPolicy }) {
             <button
               type="button"
               onClick={onClose}
+              disabled={loading}
               className="
                 rounded-lg
                 border
@@ -515,8 +552,12 @@ function AddPolicyModal({ onClose, onSave, editingPolicy }) {
 
             <button
               type="button"
-              onClick={handleSave}
+              onClick={handleFormSubmit}
+              disabled={loading}
               className="
+                inline-flex
+                items-center
+                gap-2
                 rounded-lg
                 bg-[#243B53]
                 px-4
@@ -528,6 +569,7 @@ function AddPolicyModal({ onClose, onSave, editingPolicy }) {
                 hover:bg-[#1c2f42]
               "
             >
+              {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {t("hrCompanyPolicies.saveChanges")}
             </button>
           </div>
@@ -546,11 +588,37 @@ export default function CompanyPolicies() {
 
   const isArabic = i18n.language === "ar";
 
-  const [policies, setPolicies] = useState(initialPolicies);
-
+  const [policies, setPolicies] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-
   const [editingPolicy, setEditingPolicy] = useState(null);
+
+  /* =====================================================
+     FETCH POLICIES (API → localStorage Fallback)
+  ===================================================== */
+
+  useEffect(() => {
+    fetchPolicies();
+  }, []);
+
+  const fetchPolicies = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(API_URL);
+
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+      const data = await response.json();
+      setPolicies(data);
+      saveLocalPolicies(data);
+    } catch (error) {
+      // الـ API مش شغال → نحمّل من localStorage عشان البيانات متضيعش
+      console.warn("API unavailable — loading from localStorage:", error.message);
+      setPolicies(loadLocalPolicies());
+    } finally {
+      setLoading(false);
+    }
+  };
 
   /* =====================================================
      ADD POLICY
@@ -571,60 +639,111 @@ export default function CompanyPolicies() {
   };
 
   /* =====================================================
-     SAVE ADD / EDIT
+     DELETE POLICY
   ===================================================== */
 
-  const handleSavePolicy = ({ title, effectiveDate, owner }) => {
-    /* =====================================================
-       EDIT EXISTING POLICY
-    ===================================================== */
+  const handleDeletePolicy = async (policy) => {
+    if (!window.confirm(t("hrCompanyPolicies.deleteConfirm"))) return;
 
-    if (editingPolicy) {
-      setPolicies((prev) =>
-        prev.map((policy) =>
-          policy.id === editingPolicy.id
-            ? {
-                ...policy,
-                translationKey: undefined,
-                title,
-                effectiveDate:
-                  effectiveDate || t("hrCompanyPolicies.emptyDate"),
-                description: owner
-                  ? t("hrCompanyPolicies.ownedBy", {
-                      owner,
-                    })
-                  : policy.translationKey
-                    ? t(
-                        `hrCompanyPolicies.policies.${policy.translationKey}.description`,
-                      )
-                    : policy.description,
-              }
-            : policy,
-        ),
-      );
-    } else {
-      /* =====================================================
-         ADD NEW POLICY
-      ===================================================== */
+    try {
+      const response = await fetch(`${API_URL}/${policy.id}`, {
+        method: "DELETE",
+      });
 
-      setPolicies((prev) => [
-        ...prev,
-        {
-          id: `${title.toLowerCase().replace(/\s+/g, "-")}-${prev.length}`,
-          title,
-          description: owner
-            ? t("hrCompanyPolicies.ownedBy", {
-                owner,
-              })
-            : "",
-          effectiveDate: effectiveDate || t("hrCompanyPolicies.emptyDate"),
-          version: t("hrCompanyPolicies.newVersion"),
-        },
-      ]);
+      if (!response.ok) throw new Error(`Delete failed: ${response.status}`);
+    } catch (error) {
+      console.warn("API delete failed — deleting locally:", error.message);
+    } finally {
+      // الحذف المحلي في الحالتين (نجاح أو فشل الـ API)
+      setPolicies((prev) => {
+        const next = prev.filter((p) => p.id !== policy.id);
+        saveLocalPolicies(next);
+        return next;
+      });
     }
+  };
 
-    setIsModalOpen(false);
-    setEditingPolicy(null);
+  /* =====================================================
+     SAVE ADD / EDIT (API → localStorage Fallback)
+  ===================================================== */
+
+  const handleSavePolicy = async ({ title, effectiveDate, owner }) => {
+    const isEditing = Boolean(editingPolicy);
+    const policyId = editingPolicy?.id;
+
+    // بناء النسخة المحلية (Fallback) لو الـ API مش شغال
+    const buildLocalList = (list) =>
+      isEditing
+        ? list.map((p) =>
+            p.id === policyId
+              ? {
+                  ...p,
+                  translationKey: undefined,
+                  title,
+                  effectiveDate: effectiveDate || "N/A",
+                  owner: owner || p.owner,
+                  description: owner
+                    ? `Owned by ${owner}`
+                    : p.description || "New policy document",
+                  version: p.version || "v1.0",
+                }
+              : p
+          )
+        : [
+            ...list,
+            {
+              id: `custom-${Date.now()}`,
+              title,
+              effectiveDate: effectiveDate || "N/A",
+              owner,
+              description: owner
+                ? `Owned by ${owner}`
+                : "New policy document",
+              version: "v1.0",
+            },
+          ];
+
+    try {
+      const url = isEditing ? `${API_URL}/${policyId}` : API_URL;
+      const method = isEditing ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, effectiveDate, owner }),
+      });
+
+      if (!response.ok) throw new Error(`Save failed: ${response.status}`);
+
+      const savedPolicy = await response.json();
+
+      // توحيد الـ id (MongoDB بيرجع _id)
+      const normalized = {
+        ...savedPolicy,
+        id: savedPolicy.id || savedPolicy._id,
+      };
+
+      setPolicies((prev) => {
+        const next = isEditing
+          ? prev.map((p) => (p.id === policyId ? normalized : p))
+          : [...prev, normalized];
+        saveLocalPolicies(next);
+        return next;
+      });
+    } catch (error) {
+      // الـ API فشل → تحديث محلي + حفظ في localStorage
+      console.warn("API save failed — saving locally:", error.message);
+
+      setPolicies((prev) => {
+        const next = buildLocalList(prev);
+        saveLocalPolicies(next);
+        return next;
+      });
+    } finally {
+      // قفل المودال في كل الأحوال
+      setIsModalOpen(false);
+      setEditingPolicy(null);
+    }
   };
 
   return (
@@ -692,21 +811,28 @@ export default function CompanyPolicies() {
         </motion.header>
 
         {/* =====================================================
-            POLICY CARDS
+            POLICY CARDS OR LOADING SPINNER
         ===================================================== */}
 
-        <motion.div
-          variants={containerVariants}
-          className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3"
-        >
-          {policies.map((policy) => (
-            <PolicyCard
-              key={policy.id}
-              policy={policy}
-              onEdit={handleEditPolicy}
-            />
-          ))}
-        </motion.div>
+        {loading ? (
+          <div className="flex h-48 items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-[#243B53]" />
+          </div>
+        ) : (
+          <motion.div
+            variants={containerVariants}
+            className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3"
+          >
+            {policies.map((policy) => (
+              <PolicyCard
+                key={policy.id}
+                policy={policy}
+                onEdit={handleEditPolicy}
+                onDelete={handleDeletePolicy}
+              />
+            ))}
+          </motion.div>
+        )}
       </motion.div>
 
       {/* =====================================================

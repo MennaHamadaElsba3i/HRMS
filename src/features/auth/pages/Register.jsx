@@ -1,10 +1,13 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 
 import MainAuthForm from "../components/MainAuthForm";
 import { useRegister } from "../hooks/useRegister";
+import { useAuth } from "../../../context/AuthContext";
+import { ROLE_ROUTES } from "../../../utils/roleRoutes";
+import { parseBackendMessages } from "../../../utils/parseBackendMessages";
 
 /* =========================
    ANIMATION
@@ -44,21 +47,37 @@ const itemVariants = {
 };
 
 export default function Register() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const registerMutation = useRegister();
+  const { isAuthenticated, role } = useAuth();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && role && ROLE_ROUTES[role]) {
+      navigate(ROLE_ROUTES[role], { replace: true });
+    }
+  }, [isAuthenticated, role, navigate]);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [contact, setContact] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  // =========================
+  // MESSAGE
+  // =========================
+
   const [messageKey, setMessageKey] = useState("");
-  const [messageParams] = useState(null);
+  const [messageText, setMessageText] = useState("");
   const [messageType, setMessageType] = useState("");
+  // messageList holds multiple parsed messages from a 422 response
+  const [messageList, setMessageList] = useState([]);
 
   /* =========================
      PASSWORD VALIDATION
@@ -75,10 +94,16 @@ export default function Register() {
   const handleRegister = (e) => {
     e.preventDefault();
 
+    // Clear previous message
     setMessageKey("");
+    setMessageText("");
     setMessageType("");
+    setMessageList([]);
 
-    // Required fields
+    // =========================
+    // REQUIRED FIELDS
+    // =========================
+
     if (
       !firstName.trim() ||
       !lastName.trim() ||
@@ -91,45 +116,153 @@ export default function Register() {
       return;
     }
 
-    // Password requirements
+    // =========================
+    // PASSWORD REQUIREMENTS
+    // =========================
+
     if (!hasMinLength || !hasLetter || !hasNumber) {
       setMessageKey("auth.register.errorRequirements");
       setMessageType("error");
       return;
     }
 
-    // Password match
+    // =========================
+    // PASSWORD MATCH
+    // =========================
+
     if (password !== confirmPassword) {
       setMessageKey("auth.register.errorMismatch");
       setMessageType("error");
       return;
     }
 
-    registerMutation.mutate(
-      {
-        firstName,
-        lastName,
-        contact,
-        password,
+    // =========================
+    // CURRENT LANGUAGE
+    // =========================
+
+    // Backend accepts only "ar" or "en"
+    const currentLanguage = i18n.language?.startsWith("ar") ? "ar" : "en";
+
+    console.log("=================================");
+    console.log("Register language:", i18n.language);
+    console.log("Backend language:", currentLanguage);
+    console.log("=================================");
+
+    // =========================
+    // DATA SENT TO BACKEND
+    // =========================
+
+    const registerData = {
+      name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+      email: contact.trim(),
+      phone: phone.trim() || null,
+      password: password,
+      password_confirmation: confirmPassword,
+      lang: currentLanguage,
+    };
+
+    console.log("Register data:", registerData);
+
+    // =========================
+    // REGISTER REQUEST
+    // =========================
+
+    registerMutation.mutate(registerData, {
+      // ==================================================
+      // SUCCESS - 201
+      // ==================================================
+
+      onSuccess: (data) => {
+        // Registration successful: do not create an active session
+        // Direct the user to the Owner Login page as required
+        setMessageKey("auth.register.successMessage");
+        if (data?.message) {
+          setMessageText(data.message);
+        }
+        setMessageType("success");
+
+        setTimeout(() => {
+          navigate("/owner/login", { replace: true });
+        }, 1500);
       },
-      {
-        onSuccess: (data) => {
-          console.log("Register response:", data);
 
-          setMessageKey("auth.register.successMessage");
-          setMessageType("success");
-        },
+      // ==================================================
+      // ERROR
+      // ==================================================
 
-        onError: (error) => {
-          console.log("Register error:", error);
+      onError: (error) => {
+        console.log("========== REGISTER ERROR ==========");
+        console.log("FULL ERROR:", error);
+        console.log("ERROR MESSAGE:", error?.message);
+        console.log("ERROR CODE:", error?.code);
+        console.log("ERROR RESPONSE:", error?.response);
+        console.log("RESPONSE STATUS:", error?.response?.status);
+        console.log("RESPONSE DATA:", error?.response?.data);
+        console.log("REQUEST CONFIG:", error?.config);
+        console.log("REQUEST URL:", error?.config?.url);
+        console.log("REQUEST METHOD:", error?.config?.method);
+        console.log("REQUEST DATA:", error?.config?.data);
+        console.log("====================================");
+        const status = error?.response?.status;
+        const responseData = error?.response?.data;
 
-          setMessageKey(
-            error?.response?.data?.message || "auth.register.errorGeneric",
-          );
+        const backendMessage = responseData?.message;
+
+        // Clear previous messages
+        setMessageKey("");
+        setMessageText("");
+        setMessageList([]);
+
+        // =========================
+        // 422 VALIDATION ERROR
+        // Backend now combines all validation errors into one message string.
+        // =========================
+
+        if (status === 422) {
+          if (backendMessage) {
+            const messages = parseBackendMessages(backendMessage);
+
+            if (messages.length > 1) {
+              setMessageList(messages);
+            } else {
+              setMessageText(messages[0] || backendMessage);
+            }
+          } else {
+            setMessageKey("auth.register.errorGeneric");
+          }
+
           setMessageType("error");
-        },
+          return;
+        }
+
+        // =========================
+        // 429 TOO MANY REQUESTS
+        // =========================
+
+        if (status === 429) {
+          if (backendMessage) {
+            setMessageText(backendMessage);
+          } else {
+            setMessageKey("auth.register.tooManyRequests");
+          }
+
+          setMessageType("error");
+          return;
+        }
+
+        // =========================
+        // OTHER BACKEND ERROR
+        // =========================
+
+        if (backendMessage) {
+          setMessageText(backendMessage);
+        } else {
+          setMessageKey("auth.register.errorGeneric");
+        }
+
+        setMessageType("error");
       },
-    );
+    });
   };
 
   return (
@@ -153,7 +286,7 @@ export default function Register() {
 
         <motion.p className="subtitle" variants={itemVariants}>
           {t("auth.register.alreadyHaveAccount")}{" "}
-          <Link to="/login" className="signup-link">
+          <Link to="/owner/login" className="signup-link">
             {t("auth.register.signIn")}
           </Link>
         </motion.p>
@@ -168,7 +301,7 @@ export default function Register() {
           ========================= */}
 
           <motion.div className="form-row" variants={itemVariants}>
-            {/* First Name */}
+            {/* FIRST NAME */}
 
             <motion.div className="form-group" variants={itemVariants}>
               <label htmlFor="firstName">{t("auth.register.firstName")}</label>
@@ -197,7 +330,7 @@ export default function Register() {
               </div>
             </motion.div>
 
-            {/* Last Name */}
+            {/* LAST NAME */}
 
             <motion.div className="form-group" variants={itemVariants}>
               <label htmlFor="lastName">{t("auth.register.lastName")}</label>
@@ -228,7 +361,7 @@ export default function Register() {
           </motion.div>
 
           {/* =========================
-              CONTACT
+              CONTACT / EMAIL
           ========================= */}
 
           <motion.div className="form-group" variants={itemVariants}>
@@ -250,7 +383,8 @@ export default function Register() {
 
               <input
                 id="contact"
-                type="text"
+                type="email"
+                autoComplete="email"
                 placeholder={t("auth.register.contactPlaceholder")}
                 value={contact}
                 onChange={(e) => setContact(e.target.value)}
@@ -258,6 +392,28 @@ export default function Register() {
             </div>
 
             <span className="field-hint">{t("auth.register.contactHint")}</span>
+          </motion.div>
+
+          {/* =========================
+              PHONE
+          ========================= */}
+
+          <motion.div className="form-group" variants={itemVariants}>
+            <label htmlFor="phone">{t("auth.register.phone", "Phone")}</label>
+
+            <div className="input-wrapper">
+              <input
+                id="phone"
+                type="tel"
+                autoComplete="tel"
+                placeholder={t(
+                  "auth.register.phonePlaceholder",
+                  "Phone number",
+                )}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            </div>
           </motion.div>
 
           {/* =========================
@@ -287,6 +443,7 @@ export default function Register() {
               <input
                 id="password"
                 type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
                 placeholder={t("auth.register.passwordPlaceholder")}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -327,7 +484,7 @@ export default function Register() {
               </button>
             </div>
 
-            {/* Password Hints */}
+            {/* PASSWORD HINTS */}
 
             <motion.div className="password-hints" variants={itemVariants}>
               <span className={`hint-item ${hasMinLength ? "valid" : ""}`}>
@@ -376,6 +533,7 @@ export default function Register() {
               <input
                 id="confirmPassword"
                 type={showConfirmPassword ? "text" : "password"}
+                autoComplete="new-password"
                 placeholder={t("auth.register.confirmPasswordPlaceholder")}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -416,11 +574,19 @@ export default function Register() {
               </button>
             </div>
 
+            {/* PASSWORD MISMATCH */}
+
             {confirmPassword && password !== confirmPassword && (
               <motion.span
                 className="confirm-error"
-                initial={{ opacity: 0, y: -5 }}
-                animate={{ opacity: 1, y: 0 }}
+                initial={{
+                  opacity: 0,
+                  y: -5,
+                }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                }}
               >
                 {t("auth.register.errorMismatch")}
               </motion.span>
@@ -447,38 +613,53 @@ export default function Register() {
             }}
           >
             {registerMutation.isPending
-              ? "Creating Account..."
+              ? t("auth.register.creatingAccount", "Creating Account...")
               : t("auth.register.createAccount")}
           </motion.button>
 
           {/* =========================
-              MESSAGE
+              MESSAGE (single or list)
           ========================= */}
 
-          {messageKey && (
+          {messageList.length > 1 ? (
             <motion.div
               className={`form-message ${messageType}`}
-              initial={{
-                opacity: 0,
-                y: 10,
-                scale: 0.98,
-              }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: 1,
-              }}
-              transition={{
-                duration: 0.3,
-              }}
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.3 }}
+              style={{ alignItems: "flex-start" }}
+            >
+              <span className="message-icon" style={{ marginTop: "1px" }}>
+                !
+              </span>
+
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: "1rem",
+                  lineHeight: 1.6,
+                }}
+              >
+                {messageList.map((msg, i) => (
+                  <li key={i}>{msg}</li>
+                ))}
+              </ul>
+            </motion.div>
+          ) : (messageKey || messageText) ? (
+            <motion.div
+              className={`form-message ${messageType}`}
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.3 }}
             >
               <span className="message-icon">
                 {messageType === "success" ? "✓" : "!"}
               </span>
 
-              <span>{t(messageKey, messageParams)}</span>
+              <span>{messageText || t(messageKey)}</span>
             </motion.div>
-          )}
+          ) : null}
+
 
           {/* =========================
               TERMS

@@ -1,236 +1,19 @@
-// import { useState } from "react";
-// import { useNavigate } from "react-router-dom";
-// import { useTranslation } from "react-i18next";
-// import "../../../styles/auth/ResetPassword.css";
-// import { FaEye, FaEyeSlash } from "react-icons/fa";
-// import MainAuthForm from "../components/mainAuthForm";
-// import { useResetPassword } from "../hooks/useResetPassword";
-// const ResetPassword = () => {
-//   const { t } = useTranslation();
-//   const navigate = useNavigate();
-
-//   const [newPassword, setNewPassword] = useState("");
-//   const [confirmPassword, setConfirmPassword] = useState("");
-
-//   const [showNewPassword, setShowNewPassword] = useState(false);
-//   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-//   const [error, setError] = useState("");
-//   const [isLoading, setIsLoading] = useState(false);
-//   const resetPasswordMutation = useResetPassword();
-//   const passwordRequirements = {
-//     length: newPassword.length >= 8,
-//     uppercase: /[A-Z]/.test(newPassword),
-//     lowercase: /[a-z]/.test(newPassword),
-//     number: /[0-9]/.test(newPassword),
-//     special: /[^A-Za-z0-9]/.test(newPassword),
-//   };
-
-//   const strengthScore =
-//     Object.values(passwordRequirements).filter(Boolean).length;
-
-//   const strengthPercentage = (strengthScore / 5) * 100;
-
-//   const handleReset = (e) => {
-//     e.preventDefault();
-
-//     // Password requirements
-//     if (!hasMinLength || !hasLetter || !hasNumber) {
-//       toast.error("Password does not meet the requirements.");
-//       return;
-//     }
-
-//     // Password match
-//     if (newPassword !== confirmPassword) {
-//       toast.error("Passwords do not match.");
-//       return;
-//     }
-
-//     resetPasswordMutation.mutate(
-//       {
-//         newPassword,
-//       },
-//       {
-//         onSuccess: (data) => {
-//           console.log("Reset Password response:", data);
-
-//           toast.success("Password reset successfully!");
-
-//           setTimeout(() => {
-//             navigate("/password-reset-success");
-//           }, 1000);
-//         },
-
-//         onError: (error) => {
-//           console.log("Reset Password error:", error);
-
-//           toast.error(
-//             error?.response?.data?.message ||
-//               "Something went wrong. Please try again.",
-//           );
-//         },
-//       },
-//     );
-//   };
-
-//   return (
-//     <MainAuthForm>
-//       <div className="reset-password-card">
-//         <h1>{t("auth.resetPassword.title")}</h1>
-
-//         <p className="reset-password-description">
-//           {t("auth.resetPassword.subtitle")}
-//         </p>
-
-//         {/* New Password */}
-//         <div className="password-field">
-//           <label htmlFor="newPassword">
-//             {t("auth.resetPassword.newPassword")}
-//           </label>
-
-//           <div className="password-input-wrapper">
-//             <input
-//               id="newPassword"
-//               type={showNewPassword ? "text" : "password"}
-//               placeholder={t("auth.resetPassword.newPasswordPlaceholder")}
-//               value={newPassword}
-//               onChange={(e) => setNewPassword(e.target.value)}
-//             />
-
-//             <button
-//               type="button"
-//               className="password-toggle"
-//               onClick={() => setShowNewPassword(!showNewPassword)}
-//             >
-//               {showNewPassword ? <FaEyeSlash /> : <FaEye />}
-//             </button>
-//           </div>
-//         </div>
-
-//         {/* Password Strength */}
-//         <div className="password-strength">
-//           <div className="strength-bar">
-//             <div
-//               className="strength-bar-fill"
-//               style={{ width: `${strengthPercentage}%` }}
-//             />
-//           </div>
-
-//           <span>{t("auth.resetPassword.strength")}</span>
-
-//           <div className="requirements">
-//             <div
-//               className={
-//                 passwordRequirements.length
-//                   ? "requirement valid"
-//                   : "requirement"
-//               }
-//             >
-//               <span className="requirement-circle" />
-//               {t("auth.resetPassword.reqLength")}
-//             </div>
-
-//             <div
-//               className={
-//                 passwordRequirements.uppercase
-//                   ? "requirement valid"
-//                   : "requirement"
-//               }
-//             >
-//               <span className="requirement-circle" />
-//               {t("auth.resetPassword.reqUppercase")}
-//             </div>
-
-//             <div
-//               className={
-//                 passwordRequirements.lowercase
-//                   ? "requirement valid"
-//                   : "requirement"
-//               }
-//             >
-//               <span className="requirement-circle" />
-//               {t("auth.resetPassword.reqLowercase")}
-//             </div>
-
-//             <div
-//               className={
-//                 passwordRequirements.number
-//                   ? "requirement valid"
-//                   : "requirement"
-//               }
-//             >
-//               <span className="requirement-circle" />
-//               {t("auth.resetPassword.reqNumber")}
-//             </div>
-
-//             <div
-//               className={
-//                 passwordRequirements.special
-//                   ? "requirement valid"
-//                   : "requirement"
-//               }
-//             >
-//               <span className="requirement-circle" />
-//               {t("auth.resetPassword.reqSpecial")}
-//             </div>
-//           </div>
-//         </div>
-
-//         {/* Confirm Password */}
-//         <div className="password-field confirm-field">
-//           <label htmlFor="confirmPassword">
-//             {t("auth.resetPassword.confirmPassword")}
-//           </label>
-
-//           <div className="password-input-wrapper">
-//             <input
-//               id="confirmPassword"
-//               type={showConfirmPassword ? "text" : "password"}
-//               placeholder={t("auth.resetPassword.confirmPasswordPlaceholder")}
-//               value={confirmPassword}
-//               onChange={(e) => setConfirmPassword(e.target.value)}
-//             />
-
-//             <button
-//               type="button"
-//               className="password-toggle"
-//               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-//             >
-//               {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
-//             </button>
-//           </div>
-//         </div>
-
-//         {/* Error */}
-//         {error && <p className="reset-password-error">{error}</p>}
-
-//         <button
-//           className="reset-password-button"
-//           onClick={handleResetPassword}
-//           disabled={isLoading}
-//         >
-//           {isLoading
-//             ? t("auth.resetPassword.resetting")
-//             : t("auth.resetPassword.resetButton")}
-//         </button>
-//       </div>
-//     </MainAuthForm>
-//   );
-// };
-
-// export default ResetPassword;
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-hot-toast";
-import "../../../styles/auth/ResetPassword.css";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
+
+import "../../../styles/auth/ResetPassword.css";
+
 import MainAuthForm from "../components/MainAuthForm";
 import { useResetPassword } from "../hooks/useResetPassword";
+import { useAuth } from "../../../context/AuthContext";
 
 const ResetPassword = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { clearAuthSession } = useAuth();
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -240,7 +23,10 @@ const ResetPassword = () => {
 
   const resetPasswordMutation = useResetPassword();
 
-  // Password requirements
+  // =====================================================
+  // PASSWORD REQUIREMENTS
+  // =====================================================
+
   const passwordRequirements = {
     length: newPassword.length >= 8,
     uppercase: /[A-Z]/.test(newPassword),
@@ -249,71 +35,220 @@ const ResetPassword = () => {
     special: /[^A-Za-z0-9]/.test(newPassword),
   };
 
-  // Password strength
+  // =====================================================
+  // PASSWORD STRENGTH
+  // =====================================================
+
   const strengthScore =
     Object.values(passwordRequirements).filter(Boolean).length;
 
   const strengthPercentage = (strengthScore / 5) * 100;
 
+  // =====================================================
+  // RESET PASSWORD
+  // =====================================================
+
   const handleReset = (e) => {
     e.preventDefault();
 
-    // Check password requirements
-    if (
-      !passwordRequirements.length ||
-      !passwordRequirements.uppercase ||
-      !passwordRequirements.lowercase ||
-      !passwordRequirements.number ||
-      !passwordRequirements.special
-    ) {
-      toast.error("Password does not meet the requirements.");
+    // ===================================================
+    // CHECK PASSWORD REQUIREMENTS
+    // ===================================================
+
+    if (strengthScore < 5) {
+      toast.error(t("auth.resetPassword.errorRequirements"));
       return;
     }
 
-    // Check password match
+    // ===================================================
+    // CHECK PASSWORD MATCH
+    // ===================================================
+
     if (newPassword !== confirmPassword) {
-      toast.error("Passwords do not match.");
+      toast.error(t("auth.resetPassword.errorMismatch"));
       return;
     }
 
-    // Send request
-    resetPasswordMutation.mutate(
-      {
-        newPassword,
-      },
-      {
-        onSuccess: (data) => {
-          console.log("Reset Password response:", data);
+    // ===================================================
+    // GET RESET TOKEN
+    // ===================================================
 
-          toast.success("Password reset successfully!");
+    const resetToken = sessionStorage.getItem("resetToken");
+
+    if (!resetToken) {
+      toast.error(t("auth.resetPassword.errorGeneric"));
+
+      navigate("/ForgotPassword", {
+        replace: true,
+      });
+
+      return;
+    }
+
+    // ===================================================
+    // REQUEST DATA
+    // ===================================================
+
+    // Swagger does NOT support "lang" for this endpoint.
+    const resetPasswordData = {
+      reset_token: resetToken,
+      password: newPassword,
+      password_confirmation: confirmPassword,
+    };
+
+    console.log("=================================");
+    console.log("RESET PASSWORD");
+    console.log("Reset Password data:", {
+      reset_token: resetToken,
+      password: "***",
+      password_confirmation: "***",
+    });
+    console.log("=================================");
+
+    // ===================================================
+    // SEND REQUEST
+    // ===================================================
+
+    resetPasswordMutation.mutate(resetPasswordData, {
+      // ===============================================
+      // SUCCESS
+      // ===============================================
+
+      onSuccess: (data) => {
+        console.log("=================================");
+        console.log("RESET PASSWORD SUCCESS");
+        console.log("Reset Password response:", data);
+        console.log("=================================");
+
+        // =================================================
+        // REMOVE TEMPORARY RESET DATA
+        // =================================================
+
+        sessionStorage.removeItem("resetEmail");
+        sessionStorage.removeItem("resetToken");
+        sessionStorage.removeItem("authFlow");
+
+        // =================================================
+        // CLEAR ANY OLD AUTH SESSION
+        // =================================================
+        // This is important if an Admin/Owner was logged in
+        // in the same browser before starting activation.
+
+        clearAuthSession();
+
+        // =================================================
+        // SUCCESS MESSAGE
+        // =================================================
+
+        toast.success(t("auth.resetPassword.success"));
+
+        // =================================================
+        // GO TO LOGIN
+        // =================================================
+
+        setTimeout(() => {
+          navigate("/login", {
+            replace: true,
+          });
+        }, 1200);
+      },
+
+      // ===============================================
+      // ERROR
+      // ===============================================
+
+      onError: (error) => {
+        console.log("=================================");
+        console.log("RESET PASSWORD ERROR");
+        console.log("Status:", error?.response?.status);
+        console.log("Backend response:", error?.response?.data);
+        console.log("=================================");
+
+        const status = error?.response?.status;
+
+        // =================================================
+        // GET ACTUAL BACKEND MESSAGE
+        // =================================================
+
+        const backendMessage =
+          error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.response?.data?.errors?.[0] ||
+          error?.message;
+
+        // =================================================
+        // 422
+        // Invalid / expired reset token
+        // =================================================
+
+        if (status === 422) {
+          toast.error(
+            backendMessage ||
+              t("auth.resetPassword.errorGeneric")
+          );
+
+          sessionStorage.removeItem("resetToken");
+          sessionStorage.removeItem("resetEmail");
 
           setTimeout(() => {
-            navigate("/password-reset-success");
-          }, 1000);
-        },
+            navigate("/ForgotPassword", {
+              replace: true,
+            });
+          }, 1500);
 
-        onError: (error) => {
-          console.log("Reset Password error:", error);
+          return;
+        }
 
+        // =================================================
+        // 429
+        // Too many requests
+        // =================================================
+
+        if (status === 429) {
           toast.error(
-            error?.response?.data?.message ||
-              "Something went wrong. Please try again.",
+            backendMessage ||
+              t("auth.resetPassword.errorGeneric")
           );
-        },
+
+          return;
+        }
+
+        // =================================================
+        // OTHER BACKEND ERRORS
+        // =================================================
+
+        toast.error(
+          backendMessage ||
+            t("auth.resetPassword.errorGeneric")
+        );
       },
-    );
+    });
   };
+
+  // =====================================================
+  // UI
+  // =====================================================
 
   return (
     <MainAuthForm>
       <div className="reset-password-card">
-        <h1>{t("auth.resetPassword.title")}</h1>
+
+        {/* =================================================
+            TITLE
+        ================================================= */}
+
+        <h1>
+          {t("auth.resetPassword.title")}
+        </h1>
 
         <p className="reset-password-description">
           {t("auth.resetPassword.subtitle")}
         </p>
 
-        {/* New Password */}
+        {/* =================================================
+            NEW PASSWORD
+        ================================================= */}
+
         <div className="password-field">
           <label htmlFor="newPassword">
             {t("auth.resetPassword.newPassword")}
@@ -323,34 +258,50 @@ const ResetPassword = () => {
             <input
               id="newPassword"
               type={showNewPassword ? "text" : "password"}
-              placeholder={t("auth.resetPassword.newPasswordPlaceholder")}
+              autoComplete="new-password"
+              placeholder={t(
+                "auth.resetPassword.newPasswordPlaceholder"
+              )}
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
+              disabled={resetPasswordMutation.isPending}
             />
 
             <button
               type="button"
               className="password-toggle"
-              onClick={() => setShowNewPassword((prev) => !prev)}
+              onClick={() =>
+                setShowNewPassword((prev) => !prev)
+              }
+              disabled={resetPasswordMutation.isPending}
             >
               {showNewPassword ? <FaEyeSlash /> : <FaEye />}
             </button>
           </div>
         </div>
 
-        {/* Password Strength */}
+        {/* =================================================
+            PASSWORD STRENGTH
+        ================================================= */}
+
         <div className="password-strength">
           <div className="strength-bar">
             <div
               className="strength-bar-fill"
-              style={{ width: `${strengthPercentage}%` }}
+              style={{
+                width: `${strengthPercentage}%`,
+              }}
             />
           </div>
 
-          <span>{t("auth.resetPassword.strength")}</span>
+          <span>
+            {t("auth.resetPassword.strength")}
+          </span>
 
           <div className="requirements">
-            {/* Length */}
+
+            {/* LENGTH */}
+
             <div
               className={
                 passwordRequirements.length
@@ -359,10 +310,12 @@ const ResetPassword = () => {
               }
             >
               <span className="requirement-circle" />
+
               {t("auth.resetPassword.reqLength")}
             </div>
 
-            {/* Uppercase */}
+            {/* UPPERCASE */}
+
             <div
               className={
                 passwordRequirements.uppercase
@@ -371,10 +324,12 @@ const ResetPassword = () => {
               }
             >
               <span className="requirement-circle" />
+
               {t("auth.resetPassword.reqUppercase")}
             </div>
 
-            {/* Lowercase */}
+            {/* LOWERCASE */}
+
             <div
               className={
                 passwordRequirements.lowercase
@@ -383,10 +338,12 @@ const ResetPassword = () => {
               }
             >
               <span className="requirement-circle" />
+
               {t("auth.resetPassword.reqLowercase")}
             </div>
 
-            {/* Number */}
+            {/* NUMBER */}
+
             <div
               className={
                 passwordRequirements.number
@@ -395,10 +352,12 @@ const ResetPassword = () => {
               }
             >
               <span className="requirement-circle" />
+
               {t("auth.resetPassword.reqNumber")}
             </div>
 
-            {/* Special Character */}
+            {/* SPECIAL */}
+
             <div
               className={
                 passwordRequirements.special
@@ -407,12 +366,17 @@ const ResetPassword = () => {
               }
             >
               <span className="requirement-circle" />
+
               {t("auth.resetPassword.reqSpecial")}
             </div>
+
           </div>
         </div>
 
-        {/* Confirm Password */}
+        {/* =================================================
+            CONFIRM PASSWORD
+        ================================================= */}
+
         <div className="password-field confirm-field">
           <label htmlFor="confirmPassword">
             {t("auth.resetPassword.confirmPassword")}
@@ -421,25 +385,45 @@ const ResetPassword = () => {
           <div className="password-input-wrapper">
             <input
               id="confirmPassword"
-              type={showConfirmPassword ? "text" : "password"}
-              placeholder={t("auth.resetPassword.confirmPasswordPlaceholder")}
+              type={
+                showConfirmPassword
+                  ? "text"
+                  : "password"
+              }
+              autoComplete="new-password"
+              placeholder={t(
+                "auth.resetPassword.confirmPasswordPlaceholder"
+              )}
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={(e) =>
+                setConfirmPassword(e.target.value)
+              }
+              disabled={resetPasswordMutation.isPending}
             />
 
             <button
               type="button"
               className="password-toggle"
-              onClick={() => setShowConfirmPassword((prev) => !prev)}
+              onClick={() =>
+                setShowConfirmPassword((prev) => !prev)
+              }
+              disabled={resetPasswordMutation.isPending}
             >
-              {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
+              {showConfirmPassword ? (
+                <FaEyeSlash />
+              ) : (
+                <FaEye />
+              )}
             </button>
           </div>
         </div>
 
-        {/* Reset Password Button */}
+        {/* =================================================
+            RESET BUTTON
+        ================================================= */}
+
         <button
-          type="submit"
+          type="button"
           className="reset-password-button"
           onClick={handleReset}
           disabled={resetPasswordMutation.isPending}
@@ -448,6 +432,7 @@ const ResetPassword = () => {
             ? t("auth.resetPassword.resetting")
             : t("auth.resetPassword.resetButton")}
         </button>
+
       </div>
     </MainAuthForm>
   );

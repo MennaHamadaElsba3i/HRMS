@@ -1,26 +1,49 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import toast from "react-hot-toast";
+
 import "../../../styles/auth/VerifyOTP.css";
 import MainAuthForm from "../components/MainAuthForm";
-import { useVerifyEmail } from "../hooks/useVerifyEmail";
-export default function VerifyOTP() {
-  console.log("VERIFY OTP PAGE RENDERED");
 
+import { useVerifyEmail } from "../hooks/useVerifyEmail";
+import { useResendOTP } from "../hooks/useResendOTP";
+
+export default function VerifyOTP() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [timer, setTimer] = useState(60);
+  const [resetEmail, setResetEmail] = useState(null);
 
   const inputRefs = useRef([]);
-  const navigate = useNavigate();
+
   const verifyOTPMutation = useVerifyEmail();
-  // Timer
+  const resendOTPMutation = useResendOTP();
+
+  // Get email from sessionStorage
+  useEffect(() => {
+    const savedEmail = sessionStorage.getItem("resetEmail");
+
+    if (!savedEmail) {
+      toast.error(t("auth.verifyOtp.emailNotFound"));
+      navigate("/ForgotPassword", { replace: true });
+      return;
+    }
+
+    setResetEmail(savedEmail);
+  }, [navigate, t]);
+
+  // Countdown timer
   useEffect(() => {
     if (timer === 0) return;
 
     const interval = setInterval(() => {
-      setTimer((prev) => prev - 1);
+      setTimer((prev) => {
+        if (prev <= 1) return 0;
+        return prev - 1;
+      });
     }, 1000);
 
     return () => clearInterval(interval);
@@ -47,57 +70,160 @@ export default function VerifyOTP() {
     }
   };
 
+  // Verify OTP
   const handleVerify = (e) => {
     e.preventDefault();
+
+    const email = sessionStorage.getItem("resetEmail");
+
+    if (!email) {
+      toast.error(t("auth.verifyOtp.emailNotFound"));
+
+      navigate("/ForgotPassword", {
+        replace: true,
+      });
+
+      return;
+    }
 
     const otpValue = otp.join("");
 
     if (otpValue.length !== 6) {
-      toast.error("Please enter the 6-digit verification code.");
+      toast.error(t("auth.verifyOtp.codeLengthError"));
       return;
     }
 
-    verifyOTPMutation.mutate(
-      {
-        otp: otpValue,
-      },
-      {
-        onSuccess: (data) => {
-          console.log("Verify OTP response:", data);
+    const verifyOTPData = {
+      email,
+      otp: otpValue,
+    };
 
-          toast.success("Email verified successfully!");
+    verifyOTPMutation.mutate(verifyOTPData, {
+      onSuccess: (data) => {
+        const resetToken = data?.data?.reset_token;
+
+        if (!resetToken) {
+          toast.error(t("auth.verifyOtp.resetTokenMissing"));
+          return;
+        }
+
+        sessionStorage.setItem("resetToken", resetToken);
+
+        toast.success(t("auth.verifyOtp.verifiedSuccess"));
+
+        setTimeout(() => {
+          navigate("/ResetPassword", {
+            replace: true,
+          });
+        }, 1000);
+      },
+
+      onError: (error) => {
+        const status = error?.response?.status;
+
+        if (status === 422) {
+          toast.error(t("auth.verifyOtp.validationError"));
+
+          // Clear old reset data
+          // sessionStorage.removeItem("resetEmail");
+          sessionStorage.removeItem("resetToken");
+
+          // Return to Forgot Password
+          // setTimeout(() => {
+          //   navigate("/ForgotPassword", {
+          //     replace: true,
+          //   });
+          // }, 1200);
+
+          return;
+        }
+
+        if (status === 429) {
+          toast.error(t("auth.verifyOtp.tooManyRequests"));
+          return;
+        }
+
+        toast.error(t("auth.verifyOtp.errorGeneric"));
+      },
+    });
+  };
+
+  // Resend OTP
+  const handleResend = () => {
+    const email = sessionStorage.getItem("resetEmail");
+
+    if (!email) {
+      toast.error(t("auth.verifyOtp.emailNotFound"));
+
+      navigate("/ForgotPassword", {
+        replace: true,
+      });
+
+      return;
+    }
+
+    const resendOTPData = {
+      email,
+    };
+
+    resendOTPMutation.mutate(resendOTPData, {
+      onSuccess: () => {
+        setOtp(["", "", "", "", "", ""]);
+        setTimer(60);
+
+        setTimeout(() => {
+          inputRefs.current[0]?.focus();
+        }, 0);
+
+        toast.success(t("auth.verifyOtp.resendSuccess"));
+      },
+
+      onError: (error) => {
+        const status = error?.response?.status;
+
+        if (status === 422) {
+          toast.error(t("auth.verifyOtp.resendError"));
+
+          sessionStorage.removeItem("resetEmail");
+          sessionStorage.removeItem("resetToken");
 
           setTimeout(() => {
-            navigate("/ResetPassword");
-          }, 1000);
-        },
+            navigate("/ForgotPassword", {
+              replace: true,
+            });
+          }, 1200);
 
-        onError: (error) => {
-          console.log("Verify OTP error:", error);
+          return;
+        }
 
-          toast.error(
-            error?.response?.data?.message ||
-              "Invalid verification code. Please try again.",
-          );
-        },
+        if (status === 429) {
+          toast.error(t("auth.verifyOtp.tooManyRequests"));
+          return;
+        }
+
+        toast.error(t("auth.verifyOtp.resendError"));
       },
-    );
+    });
   };
 
-  const handleResend = () => {
-    setOtp(["", "", "", "", "", ""]);
-    setTimer(60);
-
-    inputRefs.current[0]?.focus();
-
-    toast.success(t("auth.verifyOtp.resendSuccess"));
-  };
+  const formattedTimer = `00:${timer.toString().padStart(2, "0")}`;
 
   return (
     <MainAuthForm>
       <h1 className="title">{t("auth.verifyOtp.title")}</h1>
 
       <p className="subtitle">{t("auth.verifyOtp.subtitle")}</p>
+
+      {/* Email */}
+      {resetEmail && (
+        <div className="otp-email-container">
+          <span className="otp-email-label">
+            {t("auth.verifyOtp.emailSentTo")}
+          </span>
+
+          <span className="otp-email">{resetEmail}</span>
+        </div>
+      )}
 
       <form onSubmit={handleVerify}>
         <div className="form-group">
@@ -107,21 +233,31 @@ export default function VerifyOTP() {
             {otp.map((digit, index) => (
               <input
                 key={index}
-                ref={(el) => (inputRefs.current[index] = el)}
+                ref={(el) => {
+                  inputRefs.current[index] = el;
+                }}
                 className="otp-input"
                 type="text"
                 inputMode="numeric"
-                maxLength="1"
+                autoComplete={index === 0 ? "one-time-code" : "off"}
+                maxLength={1}
                 value={digit}
                 onChange={(e) => handleChange(e.target.value, index)}
                 onKeyDown={(e) => handleKeyDown(e, index)}
+                disabled={verifyOTPMutation.isPending}
               />
             ))}
           </div>
         </div>
 
-        <button type="submit" className="sign-in">
-          {t("auth.verifyOtp.verifyButton")}
+        <button
+          type="submit"
+          className="sign-in"
+          disabled={verifyOTPMutation.isPending || resendOTPMutation.isPending}
+        >
+          {verifyOTPMutation.isPending
+            ? t("auth.verifyOtp.verifying")
+            : t("auth.verifyOtp.verifyButton")}
         </button>
       </form>
 
@@ -131,7 +267,7 @@ export default function VerifyOTP() {
             {t("auth.verifyOtp.resendPrompt")}{" "}
             <strong>
               {t("auth.verifyOtp.resendIn", {
-                time: `00:${timer.toString().padStart(2, "0")}`,
+                time: formattedTimer,
               })}
             </strong>
           </span>
@@ -140,20 +276,23 @@ export default function VerifyOTP() {
             <span>{t("auth.verifyOtp.didntReceive")}</span>
 
             <button
-              type="submit"
+              type="button"
               className="verify-btn"
-              disabled={verifyOTPMutation.isPending}
+              onClick={handleResend}
+              disabled={
+                resendOTPMutation.isPending || verifyOTPMutation.isPending
+              }
             >
-              {verifyOTPMutation.isPending
-                ? "Verifying..."
-                : t("auth.verifyOTP.verify")}
+              {resendOTPMutation.isPending
+                ? t("auth.verifyOtp.sending")
+                : t("auth.verifyOtp.resendCode")}
             </button>
           </>
         )}
       </div>
 
       <div className="back-login">
-        <a href="/login">{t("auth.verifyOtp.backToSignIn")}</a>
+        <Link to="/login">{t("auth.verifyOtp.backToSignIn")}</Link>
       </div>
     </MainAuthForm>
   );

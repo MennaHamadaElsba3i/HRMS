@@ -5,7 +5,13 @@ import ar from "./locales/ar.json";
 import "./rtl.css";
 
 const savedLanguage = localStorage.getItem("i18nextLng");
-const initialLanguage = savedLanguage === "ar" ? "ar" : "en";
+const urlSegment = window.location.pathname.split("/")[1];
+const initialLanguage =
+  urlSegment === "ar" || urlSegment === "en"
+    ? urlSegment
+    : savedLanguage === "ar"
+      ? "ar"
+      : "en";
 
 export const updateDocumentDirection = (lng) => {
   const isAr = lng && (lng === "ar" || lng.startsWith("ar"));

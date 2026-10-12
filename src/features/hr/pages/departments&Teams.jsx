@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FiPlus,
@@ -8,58 +10,49 @@ import {
   FiCheck,
   FiUsers,
   FiBriefcase,
-  FiActivity,
   FiLayers,
 } from "react-icons/fi";
+import {
+  createDepartment,
+  changeDepartmentStatus,
+  getDepartmentManagers,
+  getDepartments,
+  getEmployees,
+  updateDepartment,
+  updateEmployeeHRFields,
+} from "../api";
 
 const content = {
   en: {
     title: "Departments & Teams",
     subtitle: "Manage organizational structure, leaders, and workstreams.",
     createBtn: "Create Department",
+    editBtn: "Edit Department",
+    changeStatusBtn: "Set {status}",
     searchPlaceholder: "Search departments...",
 
     headPrefix: "Head: ",
     headcountLabel: "Headcount",
-    activeProjectsLabel: "Active projects",
 
     manageMembersBtn: "Manage Members",
     transferEmployeeBtn: "Transfer Employee",
 
     totalDepartments: "Total Departments",
     totalEmployees: "Total Employees",
-    totalProjects: "Active Projects",
-    avgAttendance: "Avg. Attendance",
 
     modalTitle: "Create Department",
     detailsLabel: "Department Name",
     detailsPlaceholder: "Enter department name",
     ownerLabel: "Department Head / Owner",
-    ownerPlaceholder: "Enter leader name",
 
     cancelBtn: "Cancel",
     saveBtn: "Save changes",
 
     successTitle: "Saved successfully",
     successSubtitle: "The new department has been added successfully.",
+    updateSuccess: "Department updated successfully.",
+    statusSuccess: "Department status updated successfully.",
     doneBtn: "Done",
-
-    engineeringName: "Engineering",
-    mariamHead: "Mariam Hassan",
-
-    peopleName: "People & Culture",
-    sarahHead: "Sarah Ahmed",
-
-    salesName: "Sales",
-    omarHead: "Omar Khaled",
-
-    logisticsName: "Logistics",
-    karimHead: "Karim Ashraf",
-
-    att94: "94% attendance",
-    att97: "97% attendance",
-    att91: "91% attendance",
-    att89: "89% attendance",
 
     noResults: "No departments found",
     results: "results",
@@ -72,56 +65,55 @@ const content = {
     transferSubtitle:
       "Select an employee and transfer them to this department.",
     employeePlaceholder: "Select employee",
+    transferJobTitle: "Job title",
+    transferJobTitlePlaceholder: "Enter the employee's job title",
+    transferJobTitleRequired: "Enter a job title before transferring.",
     transferBtn: "Transfer Employee",
+    loading: "Loading...",
+    loadError: "Failed to load departments.",
+    retry: "Retry",
+    noEmployees: "No employees are currently assigned to this department.",
+    noEmployeesToTransfer: "No employees are available to transfer.",
+    unassigned: "Unassigned",
+    active: "Active",
+    inactive: "Inactive",
+    selectHead: "Select a department head (optional)",
+    noDepartmentHead: "No department head",
+    createSuccess: "Department created successfully.",
+    transferSuccess: "Employee transferred successfully.",
+    requiredDepartmentName: "Enter a department name.",
   },
 
   ar: {
     title: "الأقسام والفرق",
     subtitle: "إدارة الهيكل التنظيمي، القادة، ومسارات العمل.",
     createBtn: "إنشاء قسم",
+    editBtn: "تعديل القسم",
+    changeStatusBtn: "تغيير الحالة إلى {status}",
     searchPlaceholder: "بحث عن الأقسام...",
 
     headPrefix: "رئيس القسم: ",
     headcountLabel: "عدد الموظفين",
-    activeProjectsLabel: "المشاريع النشطة",
 
     manageMembersBtn: "إدارة الأعضاء",
     transferEmployeeBtn: "نقل موظف",
 
     totalDepartments: "إجمالي الأقسام",
     totalEmployees: "إجمالي الموظفين",
-    totalProjects: "المشاريع النشطة",
-    avgAttendance: "متوسط الحضور",
 
     modalTitle: "إنشاء قسم جديد",
     detailsLabel: "اسم القسم",
     detailsPlaceholder: "أدخل اسم القسم",
     ownerLabel: "رئيس القسم / المسؤول",
-    ownerPlaceholder: "أدخل اسم المسؤول",
 
     cancelBtn: "إلغاء",
     saveBtn: "حفظ التغييرات",
 
     successTitle: "تم الحفظ بنجاح",
     successSubtitle: "تمت إضافة القسم الجديد بنجاح.",
+    updateSuccess: "تم تحديث القسم بنجاح.",
+    statusSuccess: "تم تحديث حالة القسم بنجاح.",
     doneBtn: "تم",
-
-    engineeringName: "الهندسة",
-    mariamHead: "مريم حسن",
-
-    peopleName: "الأفراد والثقافة",
-    sarahHead: "سارة أحمد",
-
-    salesName: "المبيعات",
-    omarHead: "عمر خالد",
-
-    logisticsName: "اللوجستيات",
-    karimHead: "كريم أشرف",
-
-    att94: "نسبة الحضور 94%",
-    att97: "نسبة الحضور 97%",
-    att91: "نسبة الحضور 91%",
-    att89: "نسبة الحضور 89%",
 
     noResults: "لم يتم العثور على أقسام",
     results: "نتائج",
@@ -133,16 +125,23 @@ const content = {
     transferTitle: "نقل موظف",
     transferSubtitle: "اختر موظفًا لنقله إلى هذا القسم.",
     employeePlaceholder: "اختر الموظف",
+    transferJobTitle: "المسمى الوظيفي",
+    transferJobTitlePlaceholder: "أدخل المسمى الوظيفي للموظف",
+    transferJobTitleRequired: "أدخل المسمى الوظيفي قبل نقل الموظف.",
     transferBtn: "نقل الموظف",
-  },
-};
-
-const pageVariants = {
-  hidden: { opacity: 0, y: 16 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.45, ease: "easeOut" },
+    loading: "جاري التحميل...",
+    loadError: "تعذر تحميل الأقسام.",
+    retry: "إعادة المحاولة",
+    noEmployees: "لا يوجد موظفون مسجلون حاليًا في هذا القسم.",
+    noEmployeesToTransfer: "لا يوجد موظفون متاحون للنقل.",
+    unassigned: "غير محدد",
+    active: "نشط",
+    inactive: "غير نشط",
+    selectHead: "اختر رئيس القسم (اختياري)",
+    noDepartmentHead: "بدون رئيس قسم",
+    createSuccess: "تم إنشاء القسم بنجاح.",
+    transferSuccess: "تم نقل الموظف بنجاح.",
+    requiredDepartmentName: "أدخل اسم القسم.",
   },
 };
 
@@ -178,57 +177,93 @@ const modalVariants = {
   },
 };
 
-export default function DepartmentsAndTeams() {
+export default function DepartmentsAndTeams({ role = "hr" }) {
   const { i18n } = useTranslation();
   const isArabic = i18n.language?.startsWith("ar");
+  const lang = isArabic ? "ar" : "en";
   const t = content[isArabic ? "ar" : "en"];
+  const queryClient = useQueryClient();
+  const departmentsQuery = useQuery({
+    queryKey: ["departments", lang],
+    queryFn: () => fetchAllDepartments(lang),
+  });
+  const managersQuery = useQuery({
+    queryKey: ["department-managers", lang],
+    queryFn: async () => {
+      const response = await getDepartmentManagers(lang);
+      const managers = [response?.data, response?.data?.data, response].find(
+        Array.isArray,
+      );
 
-  const [departments, setDepartments] = useState([
-    {
-      id: 1,
-      nameKey: "engineeringName",
-      headKey: "mariamHead",
-      attendanceKey: "att94",
-      headcount: 38,
-      activeProjects: 12,
+      if (!managers) {
+        throw new Error(
+          isArabic
+            ? "استجابة قائمة المديرين من الخادم غير صالحة."
+            : "The managers response from the server is invalid.",
+        );
+      }
+
+      return managers;
     },
-    {
-      id: 2,
-      nameKey: "peopleName",
-      headKey: "sarahHead",
-      attendanceKey: "att97",
-      headcount: 14,
-      activeProjects: 5,
-    },
-    {
-      id: 3,
-      nameKey: "salesName",
-      headKey: "omarHead",
-      attendanceKey: "att91",
-      headcount: 38,
-      activeProjects: 9,
-    },
-    {
-      id: 4,
-      nameKey: "logisticsName",
-      headKey: "karimHead",
-      attendanceKey: "att89",
-      headcount: 52,
-      activeProjects: 18,
-    },
-  ]);
+  });
+  const employeesQuery = useQuery({
+    queryKey: ["employees", "departments-page", lang],
+    queryFn: () => fetchAllEmployees(lang),
+  });
+  const departments = useMemo(
+    () => departmentsQuery.data || [],
+    [departmentsQuery.data],
+  );
+  const employees = useMemo(
+    () => employeesQuery.data || [],
+    [employeesQuery.data],
+  );
+  const managers = useMemo(
+    () => managersQuery.data || [],
+    [managersQuery.data],
+  );
 
   const [searchTerm, setSearchTerm] = useState("");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [editingDepartment, setEditingDepartment] = useState(null);
 
   const [details, setDetails] = useState("");
-  const [owner, setOwner] = useState("");
+  const [managerId, setManagerId] = useState("");
 
   const [membersModal, setMembersModal] = useState(null);
   const [transferModal, setTransferModal] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState("");
+  const [transferJobTitle, setTransferJobTitle] = useState("");
+  const [transferJobTitleError, setTransferJobTitleError] = useState("");
+
+  const createDepartmentMutation = useMutation({
+    mutationFn: (departmentData) => createDepartment(departmentData, lang),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["departments"] }),
+  });
+  const updateDepartmentMutation = useMutation({
+    mutationFn: ({ id, departmentData }) =>
+      updateDepartment(id, departmentData, lang),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["departments"] }),
+  });
+  const changeDepartmentStatusMutation = useMutation({
+    mutationFn: (id) => changeDepartmentStatus(id, lang),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["departments"] }),
+  });
+  const transferEmployeeMutation = useMutation({
+    mutationFn: ({ id, employeeData }) =>
+      updateEmployeeHRFields(id, employeeData, lang),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["employees"] }),
+        queryClient.invalidateQueries({ queryKey: ["departments"] }),
+      ]);
+    },
+  });
 
   const filteredDepartments = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -236,77 +271,93 @@ export default function DepartmentsAndTeams() {
     if (!query) return departments;
 
     return departments.filter((dept) => {
-      const name = dept.nameKey ? t[dept.nameKey] : dept.customName || "";
-      const head = dept.headKey ? t[dept.headKey] : dept.customHead || "";
-
-      return (
-        name.toLowerCase().includes(query) || head.toLowerCase().includes(query)
-      );
+      const name = dept.name || "";
+      const head = dept.manager?.name || "";
+      return name.toLowerCase().includes(query) || head.toLowerCase().includes(query);
     });
-  }, [departments, searchTerm, isArabic, t]);
+  }, [departments, searchTerm]);
 
-  const totalEmployees = useMemo(
-    () => departments.reduce((sum, dept) => sum + dept.headcount, 0),
-    [departments],
-  );
-
-  const totalProjects = useMemo(
-    () => departments.reduce((sum, dept) => sum + dept.activeProjects, 0),
-    [departments],
-  );
-
-  const averageAttendance = useMemo(() => {
-    if (departments.length === 0) return 0;
-
-    const sumAttendance = departments.reduce((sum, dept) => {
-      const attendanceText = dept.attendanceKey
-        ? t[dept.attendanceKey]
-        : dept.customAttendance || "";
-
-      const match = attendanceText.match(/\d+/);
-
-      return sum + (match ? Number(match[0]) : 0);
-    }, 0);
-
-    return Math.round(sumAttendance / departments.length);
-  }, [departments, t]);
+  const totalEmployees = employees.length;
 
   const handleCreateDepartment = () => {
+    setEditingDepartment(null);
     setDetails("");
-    setOwner("");
+    setManagerId("");
     setIsSuccess(false);
     setIsModalOpen(true);
   };
 
-  const handleSaveDepartment = (e) => {
+  const handleEditDepartment = (department) => {
+    setEditingDepartment(department);
+    setDetails(department.name || "");
+    setManagerId(
+      String(department.manager_id ?? department.manager?.id ?? ""),
+    );
+    setIsSuccess(false);
+    setIsModalOpen(true);
+  };
+
+  const handleSaveDepartment = async (e) => {
     e.preventDefault();
 
-    if (!details.trim()) return;
+    if (!details.trim()) {
+      toast.error(t.requiredDepartmentName);
+      return;
+    }
 
-    const newDept = {
-      id: Date.now(),
-      nameKey: null,
-      customName: details.trim(),
-
-      headKey: null,
-      customHead: owner.trim() || (isArabic ? "غير محدد" : "Unassigned"),
-
-      attendanceKey: null,
-      customAttendance: isArabic ? "نسبة الحضور 90%" : "90% attendance",
-
-      headcount: 1,
-      activeProjects: 0,
-    };
-
-    setDepartments((prev) => [newDept, ...prev]);
-    setIsSuccess(true);
+    try {
+      const departmentData = {
+        name: details.trim(),
+        description: editingDepartment?.description || null,
+        manager_id: managerId ? Number(managerId) : null,
+      };
+      const response = editingDepartment
+        ? await updateDepartmentMutation.mutateAsync({
+            id: editingDepartment.id,
+            departmentData,
+          })
+        : await createDepartmentMutation.mutateAsync(departmentData);
+      setIsSuccess(true);
+      toast.success(
+        response?.message ||
+          (editingDepartment ? t.updateSuccess : t.createSuccess),
+      );
+    } catch (error) {
+      toast.error(
+        error?.response?.data?.message ||
+          (isArabic
+            ? editingDepartment
+              ? "تعذر تحديث القسم."
+              : "تعذر إنشاء القسم."
+            : editingDepartment
+              ? "Failed to update department."
+              : "Failed to create department."),
+      );
+    }
   };
 
   const closeCreateModal = () => {
     setIsModalOpen(false);
     setIsSuccess(false);
+    setEditingDepartment(null);
     setDetails("");
-    setOwner("");
+    setManagerId("");
+  };
+
+  const handleToggleDepartmentStatus = async (department) => {
+    try {
+      const response = await changeDepartmentStatusMutation.mutateAsync(
+        department.id,
+      );
+      toast.success(response?.message || t.statusSuccess);
+    } catch (error) {
+      toast.error(
+        error?.response?.data?.message ||
+          (isArabic
+            ? "تعذر تحديث حالة القسم."
+            : "Failed to update department status."),
+      );
+    }
   };
 
   const openMembersModal = (department) => {
@@ -315,6 +366,8 @@ export default function DepartmentsAndTeams() {
 
   const openTransferModal = (department) => {
     setSelectedEmployee("");
+    setTransferJobTitle("");
+    setTransferJobTitleError("");
     setTransferModal(department);
   };
 
@@ -325,22 +378,65 @@ export default function DepartmentsAndTeams() {
   const closeTransferModal = () => {
     setTransferModal(null);
     setSelectedEmployee("");
+    setTransferJobTitle("");
+    setTransferJobTitleError("");
   };
 
-  const handleTransfer = (e) => {
+  const handleTransfer = async (e) => {
     e.preventDefault();
 
     if (!selectedEmployee || !transferModal) return;
 
-    setDepartments((prev) =>
-      prev.map((dept) =>
-        dept.id === transferModal.id
-          ? { ...dept, headcount: dept.headcount + 1 }
-          : dept,
-      ),
+    const employee = employees.find(
+      (item) => String(item.id) === String(selectedEmployee),
     );
+    if (!employee) {
+      toast.error(
+        isArabic
+          ? "تعذر العثور على الموظف المحدد."
+          : "The selected employee could not be found.",
+      );
+      return;
+    }
 
-    closeTransferModal();
+    const jobTitle = transferJobTitle.trim();
+    if (!jobTitle) {
+      setTransferJobTitleError(t.transferJobTitleRequired);
+      return;
+    }
+
+    try {
+      const response = await transferEmployeeMutation.mutateAsync({
+        id: employee.id,
+        employeeData: {
+          job_title: jobTitle,
+          employment_type: employee.employment_type || "Full-time",
+          status: String(employee.status || "active").toLowerCase(),
+          department_id: Number(transferModal.id),
+        },
+      });
+      toast.success(response?.message || t.transferSuccess);
+      closeTransferModal();
+    } catch (error) {
+      const apiErrors =
+        error?.response?.data?.errors ||
+        error?.response?.data?.data?.errors ||
+        {};
+      const jobTitleError = [
+        apiErrors.job_title,
+        apiErrors["job_title.0"],
+      ]
+        .flat()
+        .find((message) => typeof message === "string");
+
+      if (jobTitleError) {
+        setTransferJobTitleError(jobTitleError);
+        return;
+      }
+
+      toast.error(error?.response?.data?.message ||
+        (isArabic ? "تعذر نقل الموظف." : "Failed to transfer employee."));
+    }
   };
 
   return (
@@ -358,9 +454,13 @@ export default function DepartmentsAndTeams() {
       >
         <div className="min-w-0">
           <p className="text-[11px] font-bold tracking-wider text-[#6b879f] uppercase">
-            {isArabic
-              ? "الموارد البشرية / الأقسام والفرق"
-              : "HR Portal / Departments & Teams"}
+            {role === "owner"
+              ? isArabic
+                ? "مسؤول النظام / الأقسام والفرق"
+                : "Admin Portal / Departments & Teams"
+              : isArabic
+                ? "الموارد البشرية / الأقسام والفرق"
+                : "HR Portal / Departments & Teams"}
           </p>
 
           <h1 className="mt-1 text-lg font-bold tracking-tight text-[#1e293b] md:text-[21px]">
@@ -408,10 +508,10 @@ export default function DepartmentsAndTeams() {
         </div>
       </motion.div>
 
-      {/* ==================== 4 Stat Cards ==================== */}
+      {/* ==================== Summary ==================== */}
       <motion.div
         variants={containerVariants}
-        className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4"
+        className="grid grid-cols-1 gap-5 sm:grid-cols-2"
       >
         {/* Total Departments */}
         <motion.div
@@ -473,92 +573,65 @@ export default function DepartmentsAndTeams() {
           </div>
         </motion.div>
 
-        {/* Active Projects */}
-        <motion.div
-          variants={itemVariants}
-          whileHover={{
-            y: -4,
-            transition: { duration: 0.2, ease: "easeOut" },
-          }}
-          className="flex flex-col justify-between rounded-2xl border border-[#e2e8f0]/80 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-shadow duration-200 hover:shadow-md"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-[#94a3b8]">
-              {t.totalProjects}
-            </p>
-
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#fff7ed] text-[#f97316]">
-              <FiBriefcase className="h-[18px] w-[18px]" />
-            </div>
-          </div>
-
-          <div className="mt-2">
-            <p className="text-[27px] font-bold tracking-tight text-[#0f172a]">
-              {totalProjects}
-            </p>
-
-            <p className="mt-1 text-xs font-normal text-[#64748b]">
-              {t.totalProjects}
-            </p>
-          </div>
-        </motion.div>
-
-        {/* Attendance */}
-        <motion.div
-          variants={itemVariants}
-          whileHover={{
-            y: -4,
-            transition: { duration: 0.2, ease: "easeOut" },
-          }}
-          className="flex flex-col justify-between rounded-2xl border border-[#e2e8f0]/80 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-shadow duration-200 hover:shadow-md"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-[#94a3b8]">
-              {t.avgAttendance}
-            </p>
-
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#ecfdf5] text-[#10b981]">
-              <FiActivity className="h-[18px] w-[18px]" />
-            </div>
-          </div>
-
-          <div className="mt-2">
-            <p className="text-[27px] font-bold tracking-tight text-[#0f172a]">
-              {averageAttendance}%
-            </p>
-
-            <p className="mt-1 text-xs font-normal text-[#64748b]">
-              {t.avgAttendance}
-            </p>
-          </div>
-        </motion.div>
       </motion.div>
 
       {/* ==================== Results Header ==================== */}
       <motion.div variants={itemVariants}>
         <p className="text-xs font-normal text-[#64748b]">
-          {filteredDepartments.length} {t.results}
+          {departmentsQuery.isLoading
+            ? t.loading
+            : `${filteredDepartments.length} ${t.results}`}
         </p>
       </motion.div>
 
+      {departmentsQuery.isError && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3">
+          <p className="text-sm font-medium text-red-700">
+            {departmentsQuery.error?.response?.data?.message || t.loadError}
+          </p>
+          <button
+            type="button"
+            onClick={() => departmentsQuery.refetch()}
+            disabled={departmentsQuery.isFetching}
+            className="shrink-0 text-sm font-semibold text-red-700 underline disabled:opacity-50"
+          >
+            {t.retry}
+          </button>
+        </div>
+      )}
+
+      {employeesQuery.isError && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3">
+          <p className="text-sm font-medium text-red-700">
+            {employeesQuery.error?.response?.data?.message ||
+              (isArabic
+                ? "تعذر تحميل الموظفين."
+                : "Failed to load employees.")}
+          </p>
+          <button
+            type="button"
+            onClick={() => employeesQuery.refetch()}
+            disabled={employeesQuery.isFetching}
+            className="shrink-0 text-sm font-semibold text-red-700 underline disabled:opacity-50"
+          >
+            {t.retry}
+          </button>
+        </div>
+      )}
+
       {/* ==================== Departments ==================== */}
-      {filteredDepartments.length > 0 ? (
+      {departmentsQuery.isLoading ? (
+        <p className="py-8 text-center text-sm text-[#64748b]">{t.loading}</p>
+      ) : filteredDepartments.length > 0 ? (
         <motion.div
           variants={containerVariants}
           className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
         >
           {filteredDepartments.map((department) => {
-            const departmentName = department.nameKey
-              ? t[department.nameKey]
-              : department.customName;
-
-            const departmentHead = department.headKey
-              ? t[department.headKey]
-              : department.customHead;
-
-            const attendance = department.attendanceKey
-              ? t[department.attendanceKey]
-              : department.customAttendance;
+            const departmentMembers = getDepartmentMembers(
+              employees,
+              department.id,
+            );
 
             return (
               <motion.div
@@ -579,17 +652,25 @@ export default function DepartmentsAndTeams() {
                       </div>
 
                       <h3 className="truncate text-sm font-bold text-[#1e293b] sm:text-base">
-                        {departmentName}
+                        {department.name}
                       </h3>
 
                       <p className="mt-1 truncate text-xs text-[#64748b]">
                         {t.headPrefix}
-                        {departmentHead}
+                        {department.manager?.name || t.unassigned}
                       </p>
                     </div>
 
-                    <span className="shrink-0 rounded-full bg-[#ecfdf5] px-2.5 py-1 text-[10px] font-bold text-[#16a34a] sm:text-xs">
-                      {attendance}
+                    <span
+                      className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold sm:text-xs ${
+                        String(department.status).toLowerCase() === "active"
+                          ? "bg-[#ecfdf5] text-[#16a34a]"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {String(department.status).toLowerCase() === "active"
+                        ? t.active
+                        : t.inactive}
                     </span>
                   </div>
 
@@ -601,17 +682,7 @@ export default function DepartmentsAndTeams() {
                       </p>
 
                       <p className="mt-1 text-base font-bold text-[#0f172a]">
-                        {department.headcount}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl bg-[#f8fafc] p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-[#94a3b8] sm:text-xs">
-                        {t.activeProjectsLabel}
-                      </p>
-
-                      <p className="mt-1 text-base font-bold text-[#0f172a]">
-                        {department.activeProjects}
+                        {department.employees_count || departmentMembers.length}
                       </p>
                     </div>
                   </div>
@@ -619,6 +690,32 @@ export default function DepartmentsAndTeams() {
 
                 {/* Actions */}
                 <div className="mt-5 space-y-2 border-t border-[#f1f5f9] pt-4">
+                  <motion.button
+                    type="button"
+                    onClick={() => handleEditDepartment(department)}
+                    whileHover={{ y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2.5 text-xs font-semibold text-[#475569] transition hover:bg-[#f8fafc]"
+                  >
+                    {t.editBtn}
+                  </motion.button>
+
+                  <motion.button
+                    type="button"
+                    onClick={() => handleToggleDepartmentStatus(department)}
+                    disabled={changeDepartmentStatusMutation.isPending}
+                    whileHover={{ y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2.5 text-xs font-semibold text-[#475569] transition hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {t.changeStatusBtn.replace(
+                      "{status}",
+                      String(department.status).toLowerCase() === "active"
+                        ? t.inactive
+                        : t.active,
+                    )}
+                  </motion.button>
+
                   <motion.button
                     type="button"
                     onClick={() => openMembersModal(department)}
@@ -683,7 +780,7 @@ export default function DepartmentsAndTeams() {
                   <div className="flex items-center justify-between border-b border-[#f1f5f9] px-6 py-5">
                     <div>
                       <h2 className="text-base font-bold text-[#1e293b]">
-                        {t.modalTitle}
+                        {editingDepartment ? t.editBtn : t.modalTitle}
                       </h2>
 
                       <p className="mt-1 text-xs text-[#64748b]">
@@ -722,13 +819,39 @@ export default function DepartmentsAndTeams() {
                           {t.ownerLabel}
                         </label>
 
-                        <input
-                          type="text"
-                          value={owner}
-                          onChange={(e) => setOwner(e.target.value)}
-                          placeholder={t.ownerPlaceholder}
-                          className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2.5 text-xs text-[#334155] outline-none transition focus:border-[#94a3b8] focus:ring-2 focus:ring-[#f1f5f9] sm:text-sm"
-                        />
+                        <select
+                          value={managerId}
+                          onChange={(e) => setManagerId(e.target.value)}
+                          disabled={managersQuery.isLoading}
+                          className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2.5 text-xs text-[#334155] outline-none transition focus:border-[#94a3b8] focus:ring-2 focus:ring-[#f1f5f9] disabled:opacity-60 sm:text-sm"
+                        >
+                          <option value="">
+                            {t.noDepartmentHead}
+                          </option>
+                          {managers.map((manager) => (
+                            <option key={manager.id} value={manager.id}>
+                              {manager.name}
+                            </option>
+                          ))}
+                        </select>
+                        {managersQuery.isError && (
+                          <div className="mt-1.5 flex items-center justify-between gap-2">
+                            <p className="text-xs text-red-600">
+                              {managersQuery.error?.response?.data?.message ||
+                                (isArabic
+                                  ? "تعذر تحميل قائمة المديرين."
+                                  : "Failed to load department heads.")}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => managersQuery.refetch()}
+                              disabled={managersQuery.isFetching}
+                              className="shrink-0 text-xs font-semibold text-red-700 underline disabled:opacity-50"
+                            >
+                              {t.retry}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -743,10 +866,17 @@ export default function DepartmentsAndTeams() {
 
                       <button
                         type="submit"
-                        disabled={!details.trim()}
+                        disabled={
+                          !details.trim() ||
+                          createDepartmentMutation.isPending ||
+                          updateDepartmentMutation.isPending
+                        }
                         className="flex-1 rounded-lg bg-[#243B53] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#1c2f42] disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
                       >
-                        {t.saveBtn}
+                        {createDepartmentMutation.isPending ||
+                        updateDepartmentMutation.isPending
+                          ? t.loading
+                          : t.saveBtn}
                       </button>
                     </div>
                   </form>
@@ -766,7 +896,7 @@ export default function DepartmentsAndTeams() {
                   </h2>
 
                   <p className="mx-auto mt-1 max-w-xs text-xs text-[#64748b] sm:text-sm">
-                    {t.successSubtitle}
+                    {editingDepartment ? t.updateSuccess : t.successSubtitle}
                   </p>
 
                   <button
@@ -813,9 +943,7 @@ export default function DepartmentsAndTeams() {
                   </h2>
 
                   <p className="mt-1 text-xs text-[#64748b] sm:text-sm">
-                    {membersModal.nameKey
-                      ? t[membersModal.nameKey]
-                      : membersModal.customName}
+                    {membersModal.name}
                   </p>
                 </div>
 
@@ -828,28 +956,42 @@ export default function DepartmentsAndTeams() {
                 </button>
               </div>
 
-              <div className="mt-5 rounded-xl bg-[#f8fafc] p-4">
-                <div className="flex items-center justify-between text-xs sm:text-sm">
-                  <span className="text-[#64748b]">{t.headcountLabel}</span>
-
-                  <span className="font-bold text-[#0f172a]">
-                    {membersModal.headcount}
-                  </span>
-                </div>
-
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e2e8f0]">
-                  <div
-                    className="h-full rounded-full bg-[#8b5cf6]"
-                    style={{
-                      width: `${Math.min(membersModal.headcount * 2, 100)}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
               <p className="mt-4 text-xs text-[#64748b] sm:text-sm">
                 {t.membersSubtitle}
               </p>
+
+              {employeesQuery.isLoading ? (
+                <p className="mt-4 text-sm text-[#64748b]">{t.loading}</p>
+              ) : employeesQuery.isError ? (
+                <p className="mt-4 text-sm text-red-600">
+                  {employeesQuery.error?.response?.data?.message ||
+                    (isArabic
+                      ? "تعذر تحميل الموظفين."
+                      : "Failed to load employees.")}
+                </p>
+              ) : (
+                <div className="mt-4 max-h-60 space-y-2 overflow-y-auto">
+                  {getDepartmentMembers(employees, membersModal.id).map(
+                    (employee) => (
+                      <div
+                        key={employee.id}
+                        className="rounded-lg bg-[#f8fafc] px-3 py-2.5"
+                      >
+                        <p className="text-sm font-semibold text-[#1e293b]">
+                          {employee.name}
+                        </p>
+                        <p className="mt-0.5 text-xs text-[#64748b]">
+                          {employee.email}
+                        </p>
+                      </div>
+                    ),
+                  )}
+                  {getDepartmentMembers(employees, membersModal.id).length ===
+                    0 && (
+                    <p className="text-sm text-[#64748b]">{t.noEmployees}</p>
+                  )}
+                </div>
+              )}
 
               <button
                 type="button"
@@ -893,9 +1035,7 @@ export default function DepartmentsAndTeams() {
                   </h2>
 
                   <p className="mt-1 text-xs text-[#64748b] sm:text-sm">
-                    {transferModal.nameKey
-                      ? t[transferModal.nameKey]
-                      : transferModal.customName}
+                    {transferModal.name}
                   </p>
                 </div>
 
@@ -919,23 +1059,94 @@ export default function DepartmentsAndTeams() {
 
                 <select
                   value={selectedEmployee}
-                  onChange={(e) => setSelectedEmployee(e.target.value)}
-                  className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2.5 text-xs text-[#334155] outline-none transition focus:border-[#94a3b8] focus:ring-2 focus:ring-[#f1f5f9] sm:text-sm"
+                  onChange={(e) => {
+                    const employeeId = e.target.value;
+                    const employee = employees.find(
+                      (item) => String(item.id) === employeeId,
+                    );
+                    setSelectedEmployee(employeeId);
+                    setTransferJobTitle(
+                      typeof employee?.job_title === "string"
+                        ? employee.job_title
+                        : "",
+                    );
+                    setTransferJobTitleError("");
+                  }}
+                  disabled={employeesQuery.isLoading || employeesQuery.isError}
+                  className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2.5 text-xs text-[#334155] outline-none transition focus:border-[#94a3b8] focus:ring-2 focus:ring-[#f1f5f9] disabled:opacity-60 sm:text-sm"
                 >
-                  <option value="">{t.employeePlaceholder}</option>
-
-                  <option value="employee-1">
-                    {isArabic ? "أحمد محمد" : "Ahmed Mohamed"}
+                  <option value="" disabled hidden>
+                    {t.employeePlaceholder}
                   </option>
-
-                  <option value="employee-2">
-                    {isArabic ? "سلمى علي" : "Salma Ali"}
-                  </option>
-
-                  <option value="employee-3">
-                    {isArabic ? "يوسف خالد" : "Youssef Khaled"}
-                  </option>
+                  {employees
+                    .filter(
+                      (employee) =>
+                        String(getEmployeeDepartmentId(employee)) !==
+                        String(transferModal.id),
+                    )
+                    .map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.name} · {employee.email}
+                      </option>
+                    ))}
                 </select>
+                {(employeesQuery.isLoading || employeesQuery.isError) && (
+                  <p
+                    className={`mt-1.5 text-xs ${
+                      employeesQuery.isError ? "text-red-600" : "text-[#64748b]"
+                    }`}
+                  >
+                    {employeesQuery.isLoading
+                      ? t.loading
+                      : employeesQuery.error?.response?.data?.message ||
+                        (isArabic
+                          ? "تعذر تحميل الموظفين."
+                          : "Failed to load employees.")}
+                  </p>
+                )}
+                {!employeesQuery.isLoading &&
+                  !employeesQuery.isError &&
+                  employees.filter(
+                    (employee) =>
+                      String(getEmployeeDepartmentId(employee)) !==
+                      String(transferModal.id),
+                  ).length === 0 && (
+                    <p className="mt-1.5 text-xs text-[#64748b]">
+                      {t.noEmployeesToTransfer}
+                    </p>
+                  )}
+
+                <label
+                  htmlFor="transfer-job-title"
+                  className="mt-4 mb-1.5 block text-xs font-semibold text-[#475569]"
+                >
+                  {t.transferJobTitle}
+                </label>
+                <input
+                  id="transfer-job-title"
+                  type="text"
+                  value={transferJobTitle}
+                  onChange={(e) => {
+                    setTransferJobTitle(e.target.value);
+                    setTransferJobTitleError("");
+                  }}
+                  placeholder={t.transferJobTitlePlaceholder}
+                  required
+                  aria-invalid={Boolean(transferJobTitleError)}
+                  className={`w-full rounded-lg border ${
+                    transferJobTitleError
+                      ? "border-red-500"
+                      : "border-[#e2e8f0]"
+                  } bg-white px-3 py-2.5 text-xs text-[#334155] outline-none transition focus:border-[#94a3b8] focus:ring-2 focus:ring-[#f1f5f9] sm:text-sm`}
+                />
+                {transferJobTitleError && (
+                  <p
+                    className="mt-1.5 text-xs font-medium text-red-600"
+                    role="alert"
+                  >
+                    {transferJobTitleError}
+                  </p>
+                )}
 
                 <div className="mt-6 flex gap-3">
                   <button
@@ -948,10 +1159,14 @@ export default function DepartmentsAndTeams() {
 
                   <button
                     type="submit"
-                    disabled={!selectedEmployee}
+                    disabled={
+                      !selectedEmployee || transferEmployeeMutation.isPending
+                    }
                     className="flex-1 rounded-lg bg-[#243B53] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#1c2f42] disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
                   >
-                    {t.transferBtn}
+                    {transferEmployeeMutation.isPending
+                      ? t.loading
+                      : t.transferBtn}
                   </button>
                 </div>
               </form>
@@ -960,5 +1175,87 @@ export default function DepartmentsAndTeams() {
         )}
       </AnimatePresence>
     </motion.div>
+  );
+}
+
+async function fetchAllDepartments(lang) {
+  const departments = [];
+  let page = 1;
+
+  while (true) {
+    const response = await getDepartments(lang, { page, per_page: 100 });
+    const currentPage = [
+      response?.data?.departments,
+      response?.departments,
+      response?.data?.data?.departments,
+      response?.data?.data,
+      response?.data,
+      response,
+    ].find(Array.isArray);
+
+    if (!currentPage) {
+      throw new Error("The departments response from the server is invalid.");
+    }
+
+    departments.push(...currentPage);
+
+    const pagination = response?.data?.meta || response?.meta || response?.data;
+    const responseLastPage = Number(pagination?.last_page);
+    if (!Number.isFinite(responseLastPage) || responseLastPage <= page) {
+      break;
+    }
+    page += 1;
+  }
+
+  return departments
+    .filter((department) => department?.id != null)
+    .map((department) => ({
+      ...department,
+      id: Number(department.id),
+      name: department.name || "",
+      employees_count: Number(department.employees_count || 0),
+    }));
+}
+
+async function fetchAllEmployees(lang) {
+  const employees = [];
+  let page = 1;
+
+  while (true) {
+    const response = await getEmployees({ page, per_page: 100, lang });
+    const currentPage = [
+      response?.data?.employees,
+      response?.employees,
+      response?.data?.data?.employees,
+      response?.data?.data,
+      response?.data,
+      response,
+    ].find(Array.isArray);
+
+    if (!currentPage) {
+      throw new Error("The employees response from the server is invalid.");
+    }
+
+    employees.push(...currentPage);
+
+    const pagination = response?.data?.meta || response?.meta || response?.data;
+    const responseLastPage = Number(pagination?.last_page);
+    if (!Number.isFinite(responseLastPage) || responseLastPage <= page) {
+      break;
+    }
+    page += 1;
+  }
+
+  return employees;
+}
+
+function getEmployeeDepartmentId(employee) {
+  return employee.department_id ?? employee.department?.id ?? "";
+}
+
+function getDepartmentMembers(employees, departmentId) {
+  return employees.filter(
+    (employee) =>
+      String(getEmployeeDepartmentId(employee)) === String(departmentId),
   );
 }

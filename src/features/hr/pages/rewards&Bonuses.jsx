@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -65,11 +66,17 @@ const modalVariants = {
   },
 };
 
-export default function RewardsAndBonuses() {
+export default function RewardsAndBonuses({ isAdmin = false }) {
   const { i18n } = useTranslation();
+  const location = useLocation();
 
   const currentLang = i18n.language || "en";
   const isArabic = currentLang?.startsWith("ar");
+
+  const isSystemAdmin =
+    isAdmin ||
+    location.pathname.startsWith("/admin") ||
+    location.pathname.startsWith("/owner");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -221,7 +228,13 @@ export default function RewardsAndBonuses() {
       >
         <div>
           <p className="text-[11px] font-bold tracking-wider text-[#6b879f] uppercase">
-            HR Management
+            {isSystemAdmin
+              ? isArabic
+                ? "إدارة النظام · المالية"
+                : "Admin Management · Financial"
+              : isArabic
+                ? "الموارد البشرية · المالية"
+                : "HR Management · Financial"}
           </p>
 
           <h1 className="mt-1 text-lg font-bold tracking-tight text-[#1e293b] md:text-[21px]">

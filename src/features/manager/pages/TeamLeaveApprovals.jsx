@@ -1,7 +1,9 @@
-import React, { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { FiCalendar } from "react-icons/fi";
+import toast from "react-hot-toast";
+import { useApproveLeaveRequest } from "../../hr/hooks/useLeaveRequests";
+import { useManagerPendingLeaveRequests } from "../hooks/useTeamLeaveApprovals";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 8 },
@@ -13,41 +15,26 @@ const staggerContainer = {
   visible: { transition: { staggerChildren: 0.04 } },
 };
 
-const INITIAL_REQUESTS = [
-  {
-    id: 1,
-    name: "Nour Adel",
-    leaveTypeKey: "annual",
-    defaultLeaveType: "Annual",
-    dates: "Sep 23 - Sep 25",
-    days: 3,
-    reasonKey: "familyTrip",
-    defaultReason: "Family trip",
-    status: "pending",
-  },
-  {
-    id: 2,
-    name: "Omar Fathy",
-    leaveTypeKey: "sick",
-    defaultLeaveType: "Sick",
-    dates: "Sep 19",
-    days: 1,
-    reasonKey: "medicalAppointment",
-    defaultReason: "Medical appointment",
-    status: "pending",
-  },
-];
-
 const TeamLeaveApprovals = () => {
-  const { t } = useTranslation();
-  const [requests, setRequests] = useState(INITIAL_REQUESTS);
+  const { t, i18n } = useTranslation();
+  const lang = i18n.language?.toLowerCase().startsWith("ar") ? "ar" : "en";
+  const requestsQuery = useManagerPendingLeaveRequests(lang);
+  const approveMutation = useApproveLeaveRequest(lang);
+  const requests = requestsQuery.data || [];
 
-  const handleDecision = (id, status) => {
-    setRequests((current) =>
-      current.map((request) =>
-        request.id === id ? { ...request, status } : request
-      )
-    );
+  const handleApprove = async (requestId) => {
+    try {
+      const response = await approveMutation.mutateAsync(requestId);
+      toast.success(
+        response?.message ||
+          t("managerLeave.approveSuccess", "Leave request approved."),
+      );
+    } catch (error) {
+      toast.error(
+        error?.response?.data?.message ||
+          t("managerLeave.approveError", "Could not approve the leave request."),
+      );
+    }
   };
 
   return (
@@ -99,83 +86,90 @@ const TeamLeaveApprovals = () => {
             </thead>
 
             <tbody className="divide-y divide-[#f1f5f9]">
-              {requests.map((request) => (
-                <tr
-                  key={request.id}
-                  className="hover:bg-[#f8fafc]/40 transition"
-                >
-                  {/* Member Name */}
-                  <td className="py-5 px-6 text-sm font-semibold text-[#102a43]">
-                    {request.name}
-                  </td>
-
-                  {/* Leave Type */}
-                  <td className="py-5 px-6 text-sm text-[#475569]">
-                    {t(
-                      `managerLeave.leaveTypes.${request.leaveTypeKey}`,
-                      request.defaultLeaveType
-                    )}
-                  </td>
-
-                  {/* Dates */}
-                  <td className="py-5 px-6 text-sm text-[#475569]">
-                    {request.dates}
-                  </td>
-
-                  {/* Days */}
-                  <td className="py-5 px-6 text-sm text-[#475569]">
-                    {request.days}
-                  </td>
-
-                  {/* Reason */}
-                  <td className="py-5 px-6 text-sm text-[#475569]">
-                    {t(
-                      `managerLeave.reasons.${request.reasonKey}`,
-                      request.defaultReason
-                    )}
-                  </td>
-
-                  {/* Actions / Status */}
-                  <td className="py-5 px-6 text-right rtl:text-left whitespace-nowrap">
-                    {request.status === "pending" ? (
-                      <div className="inline-flex items-center gap-4">
-                        <button
-                          type="button"
-                          onClick={() => handleDecision(request.id, "approved")}
-                          className="text-xs font-semibold text-[#059669] hover:text-[#047857] transition"
-                        >
-                          {t("managerLeave.actions.approve", "Approve")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDecision(request.id, "rejected")}
-                          className="text-xs font-semibold text-[#dc2626] hover:text-[#b91c1c] transition"
-                        >
-                          {t("managerLeave.actions.decline", "Decline")}
-                        </button>
-                      </div>
-                    ) : (
-                      <span
-                        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                          request.status === "approved"
-                            ? "bg-[#ecfdf5] text-[#059669]"
-                            : "bg-[#fef2f2] text-[#ef4444]"
-                        }`}
+              {requestsQuery.isLoading || requestsQuery.isError ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-[#64748b]">
+                    {requestsQuery.isLoading
+                      ? t("managerLeave.loading", "Loading leave requests...")
+                      : requestsQuery.isError
+                        ? requestsQuery.error?.response?.data?.message ||
+                          t("managerLeave.loadError", "Could not load leave requests.")
+                        : t("managerLeave.empty.title", "No leave requests found")}
+                    {requestsQuery.isError && (
+                      <button
+                        type="button"
+                        onClick={() => requestsQuery.refetch()}
+                        disabled={requestsQuery.isFetching}
+                        className="ml-2 text-xs font-semibold text-red-600 underline disabled:opacity-50"
                       >
-                        {request.status === "approved"
-                          ? t("managerLeave.statusApproved", "Approved")
-                          : t("managerLeave.statusDeclined", "Declined")}
-                      </span>
+                        {t("managerLeave.retry", "Retry")}
+                      </button>
                     )}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                requests.map((request) => (
+                  <tr
+                    key={request.id}
+                    className="transition hover:bg-[#f8fafc]/40"
+                  >
+                    <td className="px-6 py-5 text-sm font-semibold text-[#102a43]">
+                      {request.user?.name ||
+                        request.user?.full_name ||
+                        request.employee?.name ||
+                        "—"}
+                    </td>
+                    <td className="px-6 py-5 text-sm text-[#475569]">
+                      {request.leave_type?.name || "—"}
+                    </td>
+                    <td className="px-6 py-5 text-sm text-[#475569]">
+                      {formatLeaveDateRange(
+                        request.start_date,
+                        request.end_date,
+                        lang,
+                      )}
+                    </td>
+                    <td className="px-6 py-5 text-sm text-[#475569]">
+                      {request.days ?? "—"}
+                    </td>
+                    <td className="px-6 py-5 text-sm text-[#475569]">
+                      {request.reason || "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-5 text-right rtl:text-left">
+                      {request.status?.toLowerCase() === "pending" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(request.id)}
+                          disabled={approveMutation.isPending}
+                          className="text-xs font-semibold text-[#059669] transition hover:text-[#047857] disabled:opacity-50"
+                        >
+                          {t("managerLeave.actions.approve", "Approve")}
+                        </button>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                            request.status?.toLowerCase() === "approved"
+                              ? "bg-[#ecfdf5] text-[#059669]"
+                              : "bg-[#fef2f2] text-[#ef4444]"
+                          }`}
+                        >
+                          {request.status?.toLowerCase() === "approved"
+                            ? t("managerLeave.statusApproved", "Approved")
+                            : t("managerLeave.statusDeclined", "Declined")}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Empty State */}
-        {requests.length === 0 && (
+        {!requestsQuery.isLoading &&
+          !requestsQuery.isError &&
+          requests.length === 0 && (
           <div className="flex min-h-[200px] flex-col items-center justify-center p-8 text-center">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f1f5f9] text-[#64748b]">
               <FiCalendar size={18} />
@@ -194,3 +188,22 @@ const TeamLeaveApprovals = () => {
 };
 
 export default TeamLeaveApprovals;
+
+function formatLeaveDateRange(start, end, lang) {
+  const formatDate = (value) => {
+    if (!value) return "—";
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat(lang, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(date);
+  };
+
+  const formattedStart = formatDate(start);
+  const formattedEnd = formatDate(end);
+  return formattedStart === formattedEnd
+    ? formattedStart
+    : `${formattedStart} – ${formattedEnd}`;
+}
