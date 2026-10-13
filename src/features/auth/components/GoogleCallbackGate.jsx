@@ -11,6 +11,7 @@ const readAuthFromUrl = () => {
   const sp = new URLSearchParams(search);
 
   const token = hp.get("token") || hp.get("access_token") || sp.get("token") || sp.get("access_token");
+  const refreshToken = hp.get("refresh_token") || hp.get("refreshToken") || sp.get("refresh_token") || sp.get("refreshToken");
   if (!token) return null;
 
   const parseJson = (val) => {
@@ -30,7 +31,7 @@ const readAuthFromUrl = () => {
   const rawData = parseJson(hp.get("data") || sp.get("data"));
   const dataUser = rawData?.user || (rawData && !rawData.token ? rawData : null);
 
-  return { token, urlUser: rawUser || dataUser };
+  return { token, refreshToken, urlUser: rawUser || dataUser };
 };
 
 const decodeJwt = (token) => {
@@ -61,7 +62,7 @@ export default function GoogleCallbackGate({ children }) {
 
     window.history.replaceState(null, "", window.location.pathname);
 
-    const { token, urlUser } = pendingAuth;
+    const { token, refreshToken, urlUser } = pendingAuth;
     const payload = decodeJwt(token);
 
     const jwtUser = payload?.user || payload;
@@ -83,6 +84,7 @@ export default function GoogleCallbackGate({ children }) {
 
     login({
       token,
+      refreshToken,
       user,
     });
     toast.success("Signed in with Google");
