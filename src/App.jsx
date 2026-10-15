@@ -107,6 +107,12 @@ import DashboardLayout from "./layouts/DashboardLayout";
     searchParams.get("token") ||
     searchParams.get("access_token");
 
+  const refreshToken =
+    hashParams.get("refresh_token") ||
+    hashParams.get("refreshToken") ||
+    searchParams.get("refresh_token") ||
+    searchParams.get("refreshToken");
+
   if (!token) return;
 
   try {
@@ -232,6 +238,10 @@ import DashboardLayout from "./layouts/DashboardLayout";
 
     // Save exactly what the existing login flow saves
     localStorage.setItem("token", token);
+    if (refreshToken) {
+      localStorage.setItem("refresh_token", refreshToken);
+      localStorage.setItem("refreshToken", refreshToken);
+    }
     localStorage.setItem("user", JSON.stringify(combinedUser));
     localStorage.setItem("currentUser", JSON.stringify(combinedUser));
     localStorage.setItem("role", userRole);

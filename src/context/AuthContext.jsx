@@ -43,18 +43,22 @@ const normalizeUser = (rawUser) => {
 const getStoredAuth = () => {
   try {
     const token = localStorage.getItem("token");
+    const refreshToken =
+      localStorage.getItem("refresh_token") ||
+      localStorage.getItem("refreshToken") ||
+      null;
     const rawUser =
       localStorage.getItem("user") || localStorage.getItem("currentUser");
 
     if (!token || !rawUser) {
-      return { token: null, user: null, role: null, permissions: [] };
+      return { token: null, refreshToken: null, user: null, role: null, permissions: [] };
     }
 
     const parsed = JSON.parse(rawUser);
     const user = normalizeUser(parsed?.user || parsed?.data || parsed);
 
     if (!user || (!user.email && !user.id && !user.name)) {
-      return { token: null, user: null, role: null, permissions: [] };
+      return { token: null, refreshToken: null, user: null, role: null, permissions: [] };
     }
 
     const role = user.role || localStorage.getItem("role") || null;
@@ -72,33 +76,47 @@ const getStoredAuth = () => {
       }
     }
 
-    return { token, user, role, permissions };
+    return { token, refreshToken, user, role, permissions };
   } catch {
-    return { token: null, user: null, role: null, permissions: [] };
+    return { token: null, refreshToken: null, user: null, role: null, permissions: [] };
   }
 };
 
 export const AuthProvider = ({ children }) => {
   const [authState, setAuthState] = useState(() => getStoredAuth());
 
-  const { token, user: currentUser, role, permissions } = authState;
+  const { token, refreshToken, user: currentUser, role, permissions } = authState;
   const isAuthenticated = Boolean(token && currentUser);
 
-  // Sync state if 401 unauthorized event fires from axios interceptor
+  // Sync state if 401 unauthorized or token refreshed event fires
   useEffect(() => {
     const handleUnauthorized = () => {
       disconnectEcho();
       setAuthState({
         token: null,
+        refreshToken: null,
         user: null,
         role: null,
         permissions: [],
       });
     };
 
+    const handleRefreshed = (e) => {
+      const { accessToken: newToken, refreshToken: newRefreshToken, token: altToken } =
+        e?.detail || {};
+      const actualToken = newToken || altToken;
+      setAuthState((prev) => ({
+        ...prev,
+        token: actualToken || prev.token,
+        refreshToken: newRefreshToken || prev.refreshToken,
+      }));
+    };
+
     window.addEventListener("auth:unauthorized", handleUnauthorized);
+    window.addEventListener("auth:refreshed", handleRefreshed);
     return () => {
       window.removeEventListener("auth:unauthorized", handleUnauthorized);
+      window.removeEventListener("auth:refreshed", handleRefreshed);
     };
   }, []);
 
@@ -106,7 +124,7 @@ export const AuthProvider = ({ children }) => {
    * Log in user and persist session
    */
   const login = useCallback(
-    ({ token: newToken, user: newUser }, rememberMe = true) => {
+    ({ token: newToken, refreshToken: newRefreshToken, user: newUser }, rememberMe = true) => {
       if (!newToken || !newUser) return;
 
       const normalized = normalizeUser(newUser);
@@ -117,6 +135,7 @@ export const AuthProvider = ({ children }) => {
 
       setAuthState({
         token: newToken,
+        refreshToken: newRefreshToken || null,
         user: normalized,
         role: userRole,
         permissions: userPermissions,
@@ -124,6 +143,10 @@ export const AuthProvider = ({ children }) => {
 
       try {
         localStorage.setItem("token", newToken);
+        if (newRefreshToken) {
+          localStorage.setItem("refresh_token", newRefreshToken);
+          localStorage.setItem("refreshToken", newRefreshToken);
+        }
         localStorage.setItem("user", JSON.stringify(normalized));
         localStorage.setItem("currentUser", JSON.stringify(normalized));
         if (userRole) {
@@ -166,6 +189,7 @@ export const AuthProvider = ({ children }) => {
 
       setAuthState({
         token: null,
+        refreshToken: null,
         user: null,
         role: null,
         permissions: [],
@@ -173,6 +197,8 @@ export const AuthProvider = ({ children }) => {
 
       try {
         localStorage.removeItem("token");
+        localStorage.removeItem("refresh_token");
+        localStorage.removeItem("refreshToken");
         localStorage.removeItem("user");
         localStorage.removeItem("role");
         localStorage.removeItem("permissions");
@@ -202,6 +228,7 @@ export const AuthProvider = ({ children }) => {
 
     setAuthState({
       token: null,
+      refreshToken: null,
       user: null,
       role: null,
       permissions: [],
@@ -209,6 +236,8 @@ export const AuthProvider = ({ children }) => {
 
     try {
       localStorage.removeItem("token");
+      localStorage.removeItem("refresh_token");
+      localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
       localStorage.removeItem("role");
       localStorage.removeItem("permissions");
@@ -272,6 +301,7 @@ export const AuthProvider = ({ children }) => {
       value={{
         currentUser,
         token,
+        refreshToken,
         role,
         permissions,
         isAuthenticated,

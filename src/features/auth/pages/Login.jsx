@@ -103,9 +103,18 @@ export default function Login({ isOwner }) {
       hashParams.get("access_token") ||
       searchParams.get("token") ||
       searchParams.get("access_token");
+    const refreshToken =
+      hashParams.get("refresh_token") ||
+      hashParams.get("refreshToken") ||
+      searchParams.get("refresh_token") ||
+      searchParams.get("refreshToken");
 
     if (token) {
       googleCallbackHandled.current = true;
+      if (refreshToken) {
+        localStorage.setItem("refresh_token", refreshToken);
+        localStorage.setItem("refreshToken", refreshToken);
+      }
       const cleanUrl = window.location.pathname;
       window.history.replaceState(null, "", cleanUrl);
 
@@ -202,8 +211,17 @@ export default function Login({ isOwner }) {
       ========================= */
 
       onSuccess: (data) => {
-        const token = data?.data?.access_token;
-        const user = data?.data?.user;
+        const token =
+          data?.data?.access_token ||
+          data?.data?.token ||
+          data?.access_token ||
+          data?.token;
+        const refreshToken =
+          data?.data?.refresh_token ||
+          data?.data?.refreshToken ||
+          data?.refresh_token ||
+          data?.refreshToken;
+        const user = data?.data?.user || data?.user;
 
         /* =========================
            MAKE SURE TOKEN AND USER EXIST
@@ -224,7 +242,7 @@ export default function Login({ isOwner }) {
            SAVE AUTH VIA CONTEXT
         ========================= */
 
-        login({ token, user }, rememberMe);
+        login({ token, refreshToken, user }, rememberMe);
 
         /* =========================
            SAVE LANGUAGE

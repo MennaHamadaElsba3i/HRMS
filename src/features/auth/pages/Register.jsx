@@ -50,7 +50,7 @@ export default function Register() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const registerMutation = useRegister();
-  const { isAuthenticated, role } = useAuth();
+  const { isAuthenticated, role, login } = useAuth();
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -173,8 +173,29 @@ export default function Register() {
       // ==================================================
 
       onSuccess: (data) => {
-        // Registration successful: do not create an active session
-        // Direct the user to the Owner Login page as required
+        const token =
+          data?.data?.access_token ||
+          data?.data?.token ||
+          data?.access_token ||
+          data?.token;
+        const refreshToken =
+          data?.data?.refresh_token ||
+          data?.data?.refreshToken ||
+          data?.refresh_token ||
+          data?.refreshToken;
+        const user = data?.data?.user || data?.user;
+
+        if (token) {
+          localStorage.setItem("token", token);
+          if (refreshToken) {
+            localStorage.setItem("refresh_token", refreshToken);
+            localStorage.setItem("refreshToken", refreshToken);
+          }
+          if (user && login) {
+            login({ token, refreshToken, user }, true);
+          }
+        }
+
         setMessageKey("auth.register.successMessage");
         if (data?.message) {
           setMessageText(data.message);

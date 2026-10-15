@@ -41,6 +41,27 @@ export const logoutUser = async (lang = "en") => {
 };
 
 // =========================
+// Refresh Token
+// POST /api/refresh
+// =========================
+export const refreshTokenApi = async (refreshToken) => {
+  const payload = {
+    refresh_token: refreshToken,
+  };
+
+  try {
+    const response = await axiosInstance.post("/auth/refresh", payload);
+    return response.data;
+  } catch (err) {
+    if (err.response?.status === 404) {
+      const response = await axiosInstance.post("/refresh", payload);
+      return response.data;
+    }
+    throw err;
+  }
+};
+
+// =========================
 // Google Login (Owner Only)
 // GET /auth/google/redirect
 // =========================
