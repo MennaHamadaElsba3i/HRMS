@@ -101,7 +101,7 @@ const modalVariants = {
 // =====================================================
 
 function EmployeesPage() {
-  const { i18n } = useTranslation();
+  const { t: translate, i18n } = useTranslation();
 
   const currentLang = i18n.language || "en";
 
@@ -109,6 +109,26 @@ function EmployeesPage() {
 
   // API accepts only ar / en
   const apiLang = isArabic ? "ar" : "en";
+  // للعرض فقط، القيمة الأصلية للصلاحية ما بتتغيرش
+  const getPermissionLabel = (permission) => {
+    const key = String(permission)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    const i18nKey = `permissionLabels.${key}`;
+
+    if (i18n.exists(i18nKey)) {
+      return translate(i18nKey);
+    }
+
+    if (import.meta.env?.DEV) {
+      console.warn(`[permissions] Missing translation for "${permission}" (${i18nKey})`);
+    }
+
+    const readable = String(permission).trim().replace(/[._\-\s]+/g, " ");
+    return readable.charAt(0).toUpperCase() + readable.slice(1);
+  };
 
   // =====================================================
   // API / REACT QUERY
@@ -1986,7 +2006,7 @@ function EmployeesPage() {
                                     />
 
                                     <span className="flex-1 break-all">
-                                      {permission}
+                                      {getPermissionLabel(permission)}
                                     </span>
                                   </label>
                                 );
@@ -2003,7 +2023,7 @@ function EmployeesPage() {
                               key={permission}
                               className="inline-flex items-center gap-1 rounded-md bg-[#edf3f7] px-2 py-1 text-[11px] font-semibold text-[#475569]"
                             >
-                              {permission}
+                                {getPermissionLabel(permission)}
 
                               <button
                                 type="button"
