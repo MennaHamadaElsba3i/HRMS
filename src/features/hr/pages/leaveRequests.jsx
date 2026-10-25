@@ -294,11 +294,10 @@ const LeaveRequests = ({ role = "hr" }) => {
             transition={{
               duration: 0.2,
             }}
-            className={`fixed right-5 top-5 z-[100] flex max-w-[360px] items-center gap-3 rounded-xl border bg-white px-4 py-3 shadow-xl ${
-              message.type === "success"
+            className={`fixed right-5 top-5 z-[100] flex max-w-[360px] items-center gap-3 rounded-xl border bg-white px-4 py-3 shadow-xl ${message.type === "success"
                 ? "border-[#d1fae5] text-[#047857]"
                 : "border-[#fecaca] text-[#dc2626]"
-            }`}
+              }`}
           >
             {message.type === "success" ? (
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#ecfdf5]">
@@ -517,16 +516,16 @@ const LeaveRequests = ({ role = "hr" }) => {
                               ? "تعذر تحميل الطلبات"
                               : "Could not load requests"
                             : isArabic
-                          ? "لا توجد طلبات معلقة"
-                          : "No pending requests"}
+                              ? "لا توجد طلبات معلقة"
+                              : "No pending requests"}
                       </p>
 
                       <p className="mt-1 text-xs text-[#64748b] sm:text-sm">
                         {!requestsQuery.isLoading &&
                           !requestsQuery.isError &&
                           (isArabic
-                          ? "تمت مراجعة جميع طلبات الإجازات."
-                          : "All leave requests have been reviewed.")}
+                            ? "تمت مراجعة جميع طلبات الإجازات."
+                            : "All leave requests have been reviewed.")}
                       </p>
                     </div>
                   </td>
@@ -558,8 +557,7 @@ const LeaveRequests = ({ role = "hr" }) => {
                     {/* Category */}
                     <td className="px-4 py-5 align-middle">
                       <span
-                        className={`inline-flex max-w-full rounded-full px-2.5 py-1 text-[10px] font-bold sm:px-3 sm:py-1.5 sm:text-xs ${categoryStyle}`}
-                      >
+                        className={`inline-flex w-fit shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-bold sm:px-3 sm:py-1.5 sm:text-xs ${categoryStyle}`}                      >
                         {request.category}
                       </span>
                     </td>
@@ -587,7 +585,7 @@ const LeaveRequests = ({ role = "hr" }) => {
 
                     {/* Actions */}
                     <td className="px-4 py-5 align-middle">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 whitespace-nowrap">
                         <button
                           type="button"
                           disabled={activeAction !== null}

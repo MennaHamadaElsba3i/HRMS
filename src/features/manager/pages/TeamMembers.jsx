@@ -287,7 +287,7 @@ const TeamMembers = () => {
       <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-3">
         {/* Search */}
         <div className="relative flex-1 min-w-[200px]">
-          <FiSearch className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#94a3b8]" />
+          <FiSearch className="absolute start-3 top-67/100 -translate-y-1/2 h-4 w-4 text-[#94a3b8]" />
           <input
             type="text"
             id="team-members-search"
@@ -300,7 +300,7 @@ const TeamMembers = () => {
 
         {/* Status */}
         <div className="relative">
-          <FiFilter className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#94a3b8]" />
+          <FiFilter className="absolute start-3 top-67/100 -translate-y-1/2 h-4 w-4 text-[#94a3b8]" />
           <select
             id="team-members-status"
             value={status}
@@ -315,7 +315,7 @@ const TeamMembers = () => {
 
         {/* Employment type */}
         <div className="relative">
-          <FiBriefcase className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#94a3b8]" />
+          <FiBriefcase className="absolute start-3 top-67/100 -translate-y-1/2 h-4 w-4 text-[#94a3b8]" />
           <select
             id="team-members-emptype"
             value={empType}
@@ -395,7 +395,7 @@ const TeamMembers = () => {
                           onError={(e) => { e.target.style.display = "none"; }}
                         />
                       ) : (
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#5b8c6a] to-[#3d6b52] text-sm font-bold text-white">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#5b8c6a] text-sm font-bold text-white">
                           {initials(emp.name)}
                         </div>
                       )}

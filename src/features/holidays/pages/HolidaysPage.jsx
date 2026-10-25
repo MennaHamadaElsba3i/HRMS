@@ -607,11 +607,10 @@ export default function HolidaysPage({ customRole }) {
           <button
             type="button"
             onClick={() => setViewMode("list")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-              viewMode === "list"
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${viewMode === "list"
                 ? "bg-white text-[#1c364f] shadow-xs"
                 : "text-slate-500 hover:text-slate-700"
-            }`}
+              }`}
           >
             <FiList className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{t("holidays.views.list", "List")}</span>
@@ -619,11 +618,10 @@ export default function HolidaysPage({ customRole }) {
           <button
             type="button"
             onClick={() => setViewMode("grid")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-              viewMode === "grid"
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${viewMode === "grid"
                 ? "bg-white text-[#1c364f] shadow-xs"
                 : "text-slate-500 hover:text-slate-700"
-            }`}
+              }`}
           >
             <FiGrid className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{t("holidays.views.grid", "Cards")}</span>
@@ -631,11 +629,10 @@ export default function HolidaysPage({ customRole }) {
           <button
             type="button"
             onClick={() => setViewMode("calendar")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-              viewMode === "calendar"
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${viewMode === "calendar"
                 ? "bg-white text-[#1c364f] shadow-xs"
                 : "text-slate-500 hover:text-slate-700"
-            }`}
+              }`}
           >
             <FiCalendar className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{t("holidays.views.calendar", "Calendar")}</span>
@@ -757,8 +754,8 @@ export default function HolidaysPage({ customRole }) {
                             </div>
                           </td>
                           <td className="py-4 px-4">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">
-                              <FiClock className="h-3 w-3" />
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">
+                              <FiClock className="h-3 w-3 shrink-0" />
                               {daysCount} {daysCount === 1 ? "day" : "days"}
                             </span>
                           </td>
@@ -767,8 +764,8 @@ export default function HolidaysPage({ customRole }) {
                           </td>
                           <td className="py-4 px-4">
                             {holiday.is_active !== false ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                              <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
                                 {t("holidays.status.active", "Official Leave")}
                               </span>
                             ) : (
@@ -948,23 +945,21 @@ export default function HolidaysPage({ customRole }) {
                     <div
                       key={idx}
                       onClick={() => cell.holiday && setSelectedHolidayModal(cell.holiday)}
-                      className={`min-h-[80px] sm:min-h-[96px] p-2 rounded-xl border transition flex flex-col justify-between ${
-                        !cell.isCurrentMonth
+                      className={`min-h-[80px] sm:min-h-[96px] p-2 rounded-xl border transition flex flex-col justify-between ${!cell.isCurrentMonth
                           ? "bg-slate-50/40 text-slate-300 border-transparent"
                           : hasHoliday
                             ? "bg-amber-50/70 border-amber-200 text-amber-900 cursor-pointer hover:bg-amber-100/80 shadow-xs"
                             : cell.isToday
                               ? "bg-blue-50/40 border-blue-200 text-blue-900"
                               : "bg-white border-slate-100 text-slate-700 hover:bg-slate-50/60"
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between">
                         <span
-                          className={`text-xs font-bold ${
-                            cell.isToday
+                          className={`text-xs font-bold ${cell.isToday
                               ? "flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white text-[10px]"
                               : ""
-                          }`}
+                            }`}
                         >
                           {cell.day}
                         </span>
